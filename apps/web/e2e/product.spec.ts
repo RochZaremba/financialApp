@@ -1087,6 +1087,9 @@ test("named income sources, contributors, corrections and independent months", a
   await expect(page.locator("main").getByRole("alert")).toContainText(
     "Ta osoba ma już źródło",
   );
+  await expect(page.locator(".sticky-actions")).toContainText(
+    "Popraw dane i zapisz ponownie.",
+  );
   await expect(page.locator("main").getByRole("alert")).toBeInViewport();
   expect(
     await page

@@ -839,9 +839,11 @@ function BudgetEditor({ close }: { close: () => void }) {
       <div className="form-actions sticky-actions">
         <ErrorMessage error={command.error} />
         <span>
-          {income > 0 && unassigned === 0
-            ? "Gotowe. Wasz miesiąc ma plan."
-            : "Możesz zapisać i dokończyć plan później."}
+          {command.error
+            ? "Popraw dane i zapisz ponownie."
+            : income > 0 && unassigned === 0
+              ? "Gotowe. Wasz miesiąc ma plan."
+              : "Możesz zapisać i dokończyć plan później."}
         </span>
         <div>
           {b.period && (
