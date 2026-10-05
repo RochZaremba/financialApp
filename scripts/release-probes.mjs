@@ -10,6 +10,7 @@ const context = await browser.newContext({
   timezoneId: "Europe/Warsaw",
 });
 const page = await context.newPage();
+await page.clock.setFixedTime(new Date("2026-10-05T12:00:00+02:00"));
 await page.goto("http://localhost:3000");
 const name = `Release QA ${crypto.randomUUID()}`;
 const send = async (path, method, data, key = crypto.randomUUID()) => {

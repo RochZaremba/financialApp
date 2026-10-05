@@ -19,6 +19,8 @@ Deploymenty są serializowane w Actions i blokadą na serwerze. GitHub zachowuje
 
 Chromium, WebKit i wszystkie przeglądy ekranów działają w [oficjalnym obrazie Playwright](https://playwright.dev/docs/docker), którego tag odpowiada wersji pakietu z lockfile. Obraz zawiera przeglądarki i biblioteki systemowe; CI nie instaluje ich przez apt na każdym runnerze. Potwierdzono manifesty AMD64 i ARM64. Production smoke sprawdza również rzeczywiste archiwizowanie pustego magazynu paragonów i magazynu z syntetycznym plikiem przez ten sam helper, którego używa odbiornik Oracle.
 
+Przeglądarki QA mają jawnie ustawiony 5 października 2026, zgodnie z datami syntetycznych paragonów i planów. Dzięki temu testy pozostają powtarzalne po zmianie miesiąca na runnerze. Zegar użytkownika aplikacji i czas serwera pozostają rzeczywiste.
+
 ## Konfiguracja repozytorium
 
 Środowisko **production** dopuszcza tylko branch `main`. Zawiera cztery sekrety:
