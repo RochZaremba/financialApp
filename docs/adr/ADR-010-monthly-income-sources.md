@@ -14,4 +14,4 @@ Retain `Period.planned_income` as the derived total for existing analytics and o
 
 ## Consequences
 
-Names and attribution stay independent across months. Export and household deletion include the new records. Repeated PUTs cannot append duplicates. An image rollback does not require dropping the table; a schema downgrade refuses to discard existing sources. There is no new split/contribution model or automatic bookkeeping.
+Names and attribution stay independent across months. Export and household deletion include the new records. Repeated PUTs cannot append duplicates. The trusted deployment receiver starts rollback images directly with Uvicorn, bypassing the older image’s Alembic bootstrap, which cannot resolve revision 005. An image rollback does not require dropping the table; a schema downgrade refuses to discard existing sources. There is no new split/contribution model or automatic bookkeeping.

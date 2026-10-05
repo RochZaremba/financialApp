@@ -50,7 +50,7 @@ docker compose --env-file .env.production -p finance -f ~/finance/shared/compose
 docker compose --env-file .env.production -p finance -f ~/finance/shared/compose.oracle.yaml up -d --no-build --wait
 ```
 
-Nigdy nie używaj `down -v` na projekcie `finance`: usuwa dane. Przy kolejnych wydaniach zachowaj ten sam projekt Compose, hasło PostgreSQL i wolumeny `finance_postgres_data` oraz `finance_receipt_data`. Zmiana hasła w pliku nie zmienia hasła istniejącej bazy. Powrót do starszego obrazu wymaga zgodności z już zastosowanymi migracjami; nie wykonuj automatycznych downgrade.
+Nigdy nie używaj `down -v` na projekcie `finance`: usuwa dane. Przy kolejnych wydaniach zachowaj ten sam projekt Compose, hasło PostgreSQL i wolumeny `finance_postgres_data` oraz `finance_receipt_data`. Zmiana hasła w pliku nie zmienia hasła istniejącej bazy. Powrót do starszego obrazu wymaga zgodności z już zastosowanymi migracjami; nie wykonuj automatycznych downgrade. Odbiornik CI przy rollbacku nadpisuje polecenie API na bezpośredni start Uvicorn, pomijając starszy bootstrap Alembic. Przy ręcznym rollbacku należy również pominąć ten krok: starszy katalog migracji nie rozpozna nowej rewizji.
 
 ## Kopie bezpieczeństwa
 

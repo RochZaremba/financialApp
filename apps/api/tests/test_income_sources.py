@@ -103,7 +103,7 @@ def test_same_source_name_different_people_and_legacy_compatibility(client, hous
     assert response.json()["income_sources"] == []
 
 
-def test_migration_preserves_existing_plan_and_blocks_destructive_downgrade(client, household):
+def test_migration_preserves_existing_plan_and_blocks_destructive_downgrade(client, household, tmp_path):
     import os
     import subprocess
     import sys
@@ -145,6 +145,27 @@ def test_migration_preserves_existing_plan_and_blocks_destructive_downgrade(clie
         assert budget["income_sources"][0]["name"] == "Dochód wspólny"
         assert budget["income_sources"][0]["member_id"] is None
         assert budget["assigned"] == 50000
+        # Reproduce an old image's Alembic bootstrap against the expanded DB.
+        import shutil
+
+        legacy = tmp_path / "legacy-migrations"
+        shutil.copytree(api_root / "migrations", legacy)
+        (legacy / "versions/005_income_sources.py").unlink()
+        bootstrap = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; from alembic.config import Config; from alembic import command; "
+                "c=Config('alembic.ini'); c.set_main_option('script_location',sys.argv[1]); command.upgrade(c,'head')",
+                str(legacy),
+            ],
+            cwd=api_root,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert bootstrap.returncode != 0
+        assert "005" in bootstrap.stderr + bootstrap.stdout
         assert migrate("downgrade", "004").returncode != 0
         assert client.get(f"{household['path']}/budget/2026-09").json()["income_sources"][0]["amount"] == 1234567
     finally:

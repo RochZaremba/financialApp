@@ -31,14 +31,29 @@ def archive(entries):
 
 
 def payload(version="v0.1.2", commit=SHA):
-    manifest = {"version": version, "commit": commit, "platform": "linux/arm64", "repository": "RochZaremba/financialApp"}
-    files = {"images.tar.gz": b"verified-images", "release.json": json.dumps(manifest).encode()}
+    manifest = {
+        "version": version,
+        "commit": commit,
+        "platform": "linux/arm64",
+        "repository": "RochZaremba/financialApp",
+    }
+    files = {
+        "images.tar.gz": b"verified-images",
+        "release.json": json.dumps(manifest).encode(),
+    }
     files["SHA256SUMS"] = "".join(hashlib.sha256(value).hexdigest() + "  " + name + "\n" for name, value in files.items()).encode()
     return files, manifest
 
 
 @pytest.mark.parametrize(
-    "command", ["bash", "deploy ../../etc a", "deploy v0.1.1 $(id)", "deploy v0.1.1 " + SHA + " extra", "deploy 0.1.1 " + SHA]
+    "command",
+    [
+        "bash",
+        "deploy ../../etc a",
+        "deploy v0.1.1 $(id)",
+        "deploy v0.1.1 " + SHA + " extra",
+        "deploy 0.1.1 " + SHA,
+    ],
 )
 def test_rejects_unrestricted_ssh_commands(command):
     with pytest.raises(ValueError):
@@ -51,7 +66,12 @@ def test_exact_deploy_command():
 
 @pytest.mark.parametrize(
     "entries",
-    [[("../escape", b"x")], [("images.tar.gz", None)], [("images.tar.gz", b"x"), ("images.tar.gz", b"again")], [("images.tar.gz", b"x")]],
+    [
+        [("../escape", b"x")],
+        [("images.tar.gz", None)],
+        [("images.tar.gz", b"x"), ("images.tar.gz", b"again")],
+        [("images.tar.gz", b"x")],
+    ],
 )
 def test_rejects_unsafe_or_incomplete_archives(tmp_path, entries):
     with pytest.raises(ValueError):
@@ -146,6 +166,15 @@ def test_failed_health_restores_images_without_downgrade(deployment, monkeypatch
     def fail_health():
         raise RuntimeError("Health failed")
 
+    original_compose = receiver.compose
+    rollback_calls = []
+
+    def track_compose(env, *args, **kwargs):
+        if env.parent == previous and args[:1] == ("up",):
+            rollback_calls.append(kwargs.get("skip_migrations"))
+        return original_compose(env, *args, **kwargs)
+
+    monkeypatch.setattr(receiver, "compose", track_compose)
     monkeypatch.setattr(receiver, "health", fail_health)
     with pytest.raises(RuntimeError, match="Health failed"):
         receiver.deploy(incoming, manifest)
@@ -153,6 +182,7 @@ def test_failed_health_restores_images_without_downgrade(deployment, monkeypatch
     assert any(name == "v0.1.1" and args[:1] == ("up",) for name, args in calls)
     assert not (previous.parent / "v0.1.2").exists()
     assert not any("downgrade" in args for _, args in calls)
+    assert rollback_calls == [True]
 
 
 def test_stale_release_is_rejected_before_docker(deployment):
@@ -200,3 +230,40 @@ def test_public_health_failure_is_not_ignored(monkeypatch):
     monkeypatch.setattr(receiver.time, "sleep", lambda _: None)
     with pytest.raises(RuntimeError, match="Origin/public"):
         receiver.health()
+
+
+def test_rollback_overrides_old_image_migration_bootstrap(tmp_path, monkeypatch):
+    monkeypatch.setattr(receiver, "ROOT", tmp_path)
+    observed = []
+
+    def inspect_run(args, **kwargs):
+        overrides = [args[i + 1] for i, arg in enumerate(args) if arg == "-f"]
+        assert overrides[0] == str(tmp_path / "shared/compose.oracle.yaml")
+        config = json.loads(Path(overrides[1]).read_text())
+        command = config["services"]["api"]["command"]
+        assert command == [
+            "python",
+            "-m",
+            "uvicorn",
+            "app.main:app",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+        ]
+        assert "alembic" not in command and "downgrade" not in args
+        assert args[-4:] == ["--no-build", "--wait", "--wait-timeout", "180"]
+        observed.append(overrides[1])
+
+    monkeypatch.setattr(receiver, "run", inspect_run)
+    receiver.compose(
+        tmp_path / "old/.env.production",
+        "up",
+        "-d",
+        "--no-build",
+        "--wait",
+        "--wait-timeout",
+        "180",
+        skip_migrations=True,
+    )
+    assert len(observed) == 1 and not Path(observed[0]).exists()
