@@ -77,7 +77,10 @@ try {
   home = (await read("/api/auth/me")).data.households[0].id;
   const root = `/api/households/${home}`;
   await go("/budzet");
-  await page.getByLabel("Planowany dochód (zł)").fill("100");
+  await page.getByLabel("Kwota źródła 1 (zł)").fill("60,01");
+  await page.getByRole("button", { name: "Dodaj źródło dochodu" }).click();
+  await page.getByLabel("Nazwa źródła 2", { exact: true }).fill("Zlecenia");
+  await page.getByLabel("Kwota źródła 2 (zł)").fill("39,99");
   await page.getByLabel("Jedzenie — plan (zł)").fill("60");
   await page.getByLabel("Roch QA — plan (zł)").fill("40");
   await page.getByRole("button", { name: "Zapisz plan" }).click();
@@ -274,6 +277,7 @@ try {
     locale: "pl-PL",
   });
   const second = await secondContext.newPage();
+  await second.clock.setFixedTime(new Date("2026-10-05T12:00:00+02:00"));
   await second.goto(invite);
   await second.getByLabel("Jak masz na imię?").fill("Kaja QA");
   await second
@@ -288,6 +292,15 @@ try {
   await expect(
     second.getByRole("heading", { name: "Cześć, Kaja QA." }),
   ).toBeVisible();
+  await go("/budzet");
+  await page.getByRole("button", { name: "Edytuj plan" }).click();
+  await page
+    .getByLabel("Kto dostarcza dochód 2", { exact: true })
+    .selectOption({ label: "Kaja QA" });
+  await page.getByRole("button", { name: "Zapisz plan" }).click();
+  await expect(page.locator(".income-overview")).toContainText("Kaja QA");
+  await second.goto(base + "/budzet");
+  await expect(second.locator(".income-overview")).toContainText("39,99");
   await second.goto(base + "/ustawienia");
   await expect(
     second.getByRole("button", { name: "Usuń gospodarstwo", exact: true }),

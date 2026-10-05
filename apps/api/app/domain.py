@@ -18,6 +18,7 @@ from .models import (
     Category,
     ClassificationRule,
     Goal,
+    IncomeSource,
     Member,
     Period,
     Recurring,
@@ -263,6 +264,22 @@ def budget_data(db, household_id, month):
             )
         )
     planned = period.planned_income if period else 0
+    sources = (
+        [
+            serialize(source)
+            for source in db.scalars(
+                select(IncomeSource)
+                .where(IncomeSource.household_id == household_id, IncomeSource.period_id == period.id)
+                .order_by(IncomeSource.position)
+            )
+        ]
+        if period
+        else []
+    )
+    # An older deployed client/server may update the legacy total during rollback.
+    # Keep that authoritative total visible without inventing personal attribution.
+    if sum(source["amount"] for source in sources) != planned:
+        sources = [dict(id=f"legacy-{period.id}", name="Dochód wspólny", member_id=None, amount=planned)]
     assigned = sum(a["amount"] for a in allocations)
     expenses = sum(t.amount for t in txs if t.kind == "expense")
     pocket = sum(t.amount for t in txs if t.kind == "pocket")
@@ -271,6 +288,7 @@ def budget_data(db, household_id, month):
         period=serialize(period) if period else None,
         month=month,
         planned_income=planned,
+        income_sources=sources,
         assigned=assigned,
         unassigned=planned - assigned,
         spent=expenses + pocket + savings,

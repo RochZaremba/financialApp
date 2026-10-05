@@ -13,7 +13,7 @@ Wymagania: Node.js 22+, npm, Python 3.13+ z `venv` i pip, Docker z Compose. Port
 
 Otwórz **http://localhost:3000** i wybierz **Zobacz wersję demo**. Możesz też utworzyć własne konto i gospodarstwo. Setup generuje lokalne hasło bazy w prywatnym `.env`, instaluje zablokowane wersje zależności, uruchamia PostgreSQL, stosuje migracje i zasiewa dane. Ponowne wykonanie nie kasuje danych. Ctrl+C zatrzymuje web/API wraz z procesami reload i zwalnia porty; baza i dane pozostają. Zajęty port powoduje czytelny błąd zamiast połączenia z poprzednim serwerem.
 
-Demo: plan października 2026, 10 000 zł dochodu, kategorie, po 600 zł kieszonkowego dla Rocha i Kai, rzeczywiste wpisy wydatków, dwa cele, trzy płatności cykliczne oraz mieszany paragon Lidl z jedną niepewną pozycją. Konto `roch@demo.local` lub `kaja@demo.local` można zalogować hasłem `DEMO_PASSWORD` z `.env`. Przycisk demo działa wyłącznie w środowisku development; nie jest dostępny produkcyjnie.
+Demo: plan października 2026, dwa źródła wynagrodzenia (Roch: 6000 zł, Kaja: 4000 zł), kategorie, po 600 zł kieszonkowego dla Rocha i Kai, rzeczywiste wpisy wydatków, dwa cele, trzy płatności cykliczne oraz mieszany paragon Lidl z jedną niepewną pozycją. Konto `roch@demo.local` lub `kaja@demo.local` można zalogować hasłem `DEMO_PASSWORD` z `.env`. Przycisk demo działa wyłącznie w środowisku development; nie jest dostępny produkcyjnie.
 
 Budżet wybiera miesiąc według Europe/Warsaw. Jeśli otwierasz aplikację po październiku 2026, wybierz październik 2026 selektorem w nagłówku, aby obejrzeć przykładowy plan.
 
@@ -28,7 +28,7 @@ npm run build
 ## Co działa
 
 - Rejestracja, logowanie Argon2, odwoływalne sesje HttpOnly, tworzenie domu i jednorazowe siedmiodniowe zaproszenia dla domowników.
-- Miesięczny plan dochodu, koperty, kieszonkowe i cele; jasne „0 zł do przydzielenia”; migawki nazw i grup w historycznych miesiącach.
+- Miesięczne nazwane źródła dochodu z przypisaniem do domowników i automatyczną sumą, koperty, kieszonkowe i cele; jasne „0 zł do przydzielenia”; migawki nazw i grup w historycznych miesiącach.
 - Wpływy, wydatki, podział jednego wydatku na kategorie, terminalne kieszonkowe, przelewy między kontami i wpłaty na cele.
 - Prywatne zdjęcia paragonów, edycja OCR i pozycji, niepewne kategorie, pamiętanie reguł gospodarstwa i atomowe zatwierdzanie do transakcji z podziałem.
 - Inbox nieprzypisanych wydatków, niepewnych pozycji, błędów odczytu, podejrzeń duplikatu oraz paragonów oczekujących na zatwierdzenie. Zadania ze starych miesięcy mają bezpośrednią ścieżkę rozwiązania.

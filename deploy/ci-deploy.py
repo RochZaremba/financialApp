@@ -40,7 +40,10 @@ def receive(stream, folder):
             if total > MAX_BYTES or (member.name != "images.tar.gz" and member.size > 16384):
                 raise ValueError("Release archive exceeds its limit")
             seen.add(member.name)
-            with archive.extractfile(member) as source, (folder / member.name).open("wb") as target:
+            with (
+                archive.extractfile(member) as source,
+                (folder / member.name).open("wb") as target,
+            ):
                 shutil.copyfileobj(source, target, 1024 * 1024)
     if seen != MEMBERS:
         raise ValueError("Release archive is incomplete")
@@ -61,7 +64,12 @@ def validate(folder, version, commit):
         if actual != expected:
             raise ValueError("Release checksum mismatch")
     manifest = json.loads((folder / "release.json").read_text())
-    expected = {"version": version, "commit": commit, "platform": "linux/arm64", "repository": "RochZaremba/financialApp"}
+    expected = {
+        "version": version,
+        "commit": commit,
+        "platform": "linux/arm64",
+        "repository": "RochZaremba/financialApp",
+    }
     if manifest != expected:
         raise ValueError("Release identity mismatch")
     return manifest
@@ -78,10 +86,44 @@ def run(args, **kwargs):
     return subprocess.run(args, check=True, timeout=240, **kwargs)
 
 
-def compose(env, *args, **kwargs):
-    return run(
-        ["docker", "compose", "--env-file", str(env), "-p", "finance", "-f", str(ROOT / "shared/compose.oracle.yaml"), *args], **kwargs
-    )
+def compose(env, *args, skip_migrations=False, **kwargs):
+    base = [
+        "docker",
+        "compose",
+        "--env-file",
+        str(env),
+        "-p",
+        "finance",
+        "-f",
+        str(ROOT / "shared/compose.oracle.yaml"),
+    ]
+    if not skip_migrations:
+        return run([*base, *args], **kwargs)
+    # An older image cannot resolve a newer Alembic revision. Its application
+    # can still use a compatible expanded schema; never downgrade financial data.
+    with tempfile.TemporaryDirectory(prefix="rollback-", dir=ROOT) as folder:
+        override = Path(folder) / "compose.json"
+        override.write_text(
+            json.dumps(
+                {
+                    "services": {
+                        "api": {
+                            "command": [
+                                "python",
+                                "-m",
+                                "uvicorn",
+                                "app.main:app",
+                                "--host",
+                                "0.0.0.0",
+                                "--port",
+                                "8000",
+                            ]
+                        }
+                    }
+                }
+            )
+        )
+        return run([*base, "-f", str(override), *args], **kwargs)
 
 
 def current_version(manifest):
@@ -111,7 +153,11 @@ def health():
 
 def verify_images(version, commit):
     for role in ("api", "web"):
-        result = run(["docker", "image", "inspect", f"finance-{role}:{version}"], capture_output=True, text=True)
+        result = run(
+            ["docker", "image", "inspect", f"finance-{role}:{version}"],
+            capture_output=True,
+            text=True,
+        )
         image = json.loads(result.stdout)[0]
         if image["Architecture"] != "arm64" or image["Config"].get("Labels", {}).get("org.opencontainers.image.revision") != commit:
             raise ValueError("Loaded image architecture/revision mismatch")
@@ -173,7 +219,11 @@ def deploy(folder, manifest):
     backup.mkdir(parents=True, mode=0o700)
     backup.chmod(0o700)
     shutil.copy2(old_env, backup / ".env.production")
-    old_tag = run(["docker", "inspect", "finance-api-1", "--format", "{{.Config.Image}}"], capture_output=True, text=True).stdout.strip()
+    old_tag = run(
+        ["docker", "inspect", "finance-api-1", "--format", "{{.Config.Image}}"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     compose(env, "config", "--quiet")
     stopped = False
     try:
@@ -181,14 +231,28 @@ def deploy(folder, manifest):
         # OCR may take 75 seconds; finish in-flight writes before the backup.
         compose(old_env, "stop", "--timeout", "130", "web", "api")
         with (backup / "database.sql").open("wb") as output:
-            compose(old_env, "exec", "-T", "db", "pg_dump", "-U", "dom", "-d", "dom", stdout=output)
+            compose(
+                old_env,
+                "exec",
+                "-T",
+                "db",
+                "pg_dump",
+                "-U",
+                "dom",
+                "-d",
+                "dom",
+                stdout=output,
+            )
         backup_receipts(old_tag, "finance_receipt_data", backup / "receipts.tar.gz")
         compose(env, "up", "-d", "--no-build", "--wait", "--wait-timeout", "180")
         health()
         request = urllib.request.Request(
             "https://finance.rochzaremba.com/api/auth/demo",
             data=b"",
-            headers={"Origin": "https://finance.rochzaremba.com", "User-Agent": USER_AGENT},
+            headers={
+                "Origin": "https://finance.rochzaremba.com",
+                "User-Agent": USER_AGENT,
+            },
             method="POST",
         )
         try:
@@ -202,8 +266,20 @@ def deploy(folder, manifest):
         print(f"Successfully deployed {version}, commit {commit}; backup retained privately.")
     except BaseException:
         if stopped:
-            print("Deployment failed; restoring previous images without database downgrade.", file=sys.stderr)
-            compose(old_env, "up", "-d", "--no-build", "--wait", "--wait-timeout", "180")
+            print(
+                "Deployment failed; restoring previous images without database downgrade.",
+                file=sys.stderr,
+            )
+            compose(
+                old_env,
+                "up",
+                "-d",
+                "--no-build",
+                "--wait",
+                "--wait-timeout",
+                "180",
+                skip_migrations=True,
+            )
         # Keep the private backup; allow the same verified release to be retried.
         shutil.rmtree(release)
         raise
@@ -225,5 +301,8 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        print(f"Deployment rejected/failed: {type(error).__name__}: {error}", file=sys.stderr)
+        print(
+            f"Deployment rejected/failed: {type(error).__name__}: {error}",
+            file=sys.stderr,
+        )
         sys.exit(1)
