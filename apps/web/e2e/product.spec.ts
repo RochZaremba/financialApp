@@ -979,6 +979,7 @@ test("named income sources, contributors, corrections and independent months", a
   page,
   browser,
 }, testInfo) => {
+  const initialViewport = page.viewportSize();
   const unique = crypto.randomUUID();
   expect(
     (
@@ -1071,6 +1072,7 @@ test("named income sources, contributors, corrections and independent months", a
       fullPage: true,
     });
   }
+  if (initialViewport) await page.setViewportSize(initialViewport);
   await page.getByRole("button", { name: "Zapisz plan" }).click();
   await expect(page.locator(".income-source-summary")).toHaveCount(2);
   await expect(page.locator(".income-overview")).toContainText("Kaja");
