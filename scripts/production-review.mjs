@@ -305,7 +305,7 @@ try {
   await expect(
     second.getByRole("button", { name: "Usuń gospodarstwo", exact: true }),
   ).toHaveCount(0);
-  await page.reload();
+  await go("/ustawienia");
   await expect(page.getByText("Kaja QA", { exact: true })).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Pobierz dane" }).click();
