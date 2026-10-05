@@ -5,6 +5,7 @@ const fixture = path.resolve("../../fixtures/lidl.png");
 const password = "test-password-for-private-household";
 // All browser projects share the proxy IP. Each creates ten auth attempts;
 // separate projects by the real limiter window rather than weakening security.
+// eslint-disable-next-line no-empty-pattern -- Playwright requires destructured fixtures for a testInfo-only hook.
 test.beforeAll(async ({}, testInfo) => {
   if (testInfo.project.name !== "desktop") {
     await new Promise((resolve) => setTimeout(resolve, 60_000));
