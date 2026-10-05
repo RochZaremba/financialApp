@@ -113,6 +113,7 @@ def deployment(tmp_path, monkeypatch):
             kwargs["stdout"].write(b"private-backup")
 
     def demo_disabled(*args, **kwargs):
+        assert args[0].get_header("User-agent") == receiver.USER_AGENT
         raise HTTPError("https://finance.rochzaremba.com/api/auth/demo", 404, "Not found", {}, None)
 
     monkeypatch.setattr(receiver, "run", fake_run)
@@ -167,3 +168,35 @@ def test_idempotent_redeploy_does_not_restart_production(deployment):
     manifest.update(version="v0.1.1", commit="b" * 40)
     receiver.deploy(incoming, manifest)
     assert calls == []
+
+
+def test_health_identifies_monitor_and_checks_both_origins(monkeypatch):
+    requests = []
+
+    def response(request, **kwargs):
+        requests.append(request)
+        assert request.get_header("User-agent") == receiver.USER_AGENT
+        data = {"status": "ok"} if request.full_url.endswith("/health") else {"demo_enabled": False}
+        return io.BytesIO(json.dumps(data).encode())
+
+    monkeypatch.setattr(receiver.urllib.request, "urlopen", response)
+    receiver.health()
+    assert [r.full_url for r in requests] == [
+        "http://127.0.0.1:8810/api/health",
+        "http://127.0.0.1:8810/api/config",
+        "https://finance.rochzaremba.com/api/health",
+        "https://finance.rochzaremba.com/api/config",
+    ]
+
+
+def test_public_health_failure_is_not_ignored(monkeypatch):
+    def response(request, **kwargs):
+        if request.full_url.startswith("https:"):
+            raise HTTPError(request.full_url, 403, "Forbidden", {}, None)
+        data = {"status": "ok"} if request.full_url.endswith("/health") else {"demo_enabled": False}
+        return io.BytesIO(json.dumps(data).encode())
+
+    monkeypatch.setattr(receiver.urllib.request, "urlopen", response)
+    monkeypatch.setattr(receiver.time, "sleep", lambda _: None)
+    with pytest.raises(RuntimeError, match="Origin/public"):
+        receiver.health()

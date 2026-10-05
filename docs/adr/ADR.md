@@ -10,3 +10,4 @@ Accepted ADRs are binding unless superseded by a later ADR.
 - ADR-006: UX quality and Loop-Back Loop
 - ADR-007: Security and privacy model
 - ADR-008: Self-contained auth, private local storage, and integer money.
+- ADR-009: Merge-only native ARM64 delivery, private backups, restricted SSH and GitHub Releases.

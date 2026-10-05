@@ -4,7 +4,7 @@
   <p><strong>Spokojny budżet dla Waszego domu.</strong></p>
   <p>Wspólny plan. Szybkie wydatki. Paragon podzielony na właściwe koperty.</p>
 
-[![CI](https://github.com/RochZaremba/financialApp/actions/workflows/ci.yml/badge.svg)](https://github.com/RochZaremba/financialApp/actions/workflows/ci.yml)
+[![CI](https://github.com/RochZaremba/financialApp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/RochZaremba/financialApp/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/RochZaremba/financialApp)](https://github.com/RochZaremba/financialApp/releases)
 [![PWA](https://img.shields.io/badge/PWA-mobile%20%26%20desktop-216650)](apps/web/public/manifest.webmanifest)
 
@@ -24,6 +24,13 @@ Razem. to aplikacja do prywatnego budżetu gospodarstwa domowego. Dochód dostaj
 - **PWA** — polski interfejs, PLN, mobile/desktop i instalacja na ekranie telefonu.
 
 Kwoty są całkowitymi groszami. Podział transakcji musi odpowiadać jej sumie. Reguły klasyfikacji należą do konkretnego domu, a zdjęcia nie są publiczne ani przechowywane w cache PWA.
+
+<p align="center">
+  <img src="docs/images/home-desktop.png" width="760" alt="Pulpit na komputerze: pozostały budżet, koperty i szybkie dodanie paragonu" />
+  <img src="docs/images/home-mobile.png" width="230" alt="Pulpit na telefonie z najważniejszymi kwotami i dolną nawigacją" />
+</p>
+
+Podglądy używają wyłącznie syntetycznych danych demonstracyjnych. Produkcja zaczyna się od własnego konta i pustego gospodarstwa.
 
 ## Uruchomienie lokalne
 
@@ -57,11 +64,12 @@ Alternatywa: `RECEIPT_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL`. Zresta
 Zatrzymaj lokalne web/API, następnie:
 
 ```bash
-npx playwright install --with-deps chromium webkit
-WEBKIT=1 ./scripts/check.sh
+PLAYWRIGHT_DOCKER=1 WEBKIT=1 ./scripts/check.sh
 ```
 
 Pełna bramka obejmuje lint, typecheck, produkcyjny build, testy frontendowe/API, migracje, testy bezpieczeństwa deploymentu, E2E Chromium/WebKit i przegląd ekranów na czterech viewportach. Bazy i zdjęcia QA są oddzielne; testy nie wywołują płatnego OCR. Wyniki i zrzuty trafiają do ignorowanego `artifacts/`.
+
+Testy przeglądarkowe używają oficjalnego obrazu Playwright dobranego do wersji z lockfile, tak samo jak CI. Na Linuxie kontener łączy się z lokalnymi serwerami przez host networking. Alternatywnie zainstaluj przeglądarki `npx playwright install --with-deps chromium webkit` i uruchom `WEBKIT=1 ./scripts/check.sh` bez kontenera przeglądarkowego.
 
 ## CI/CD
 

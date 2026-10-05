@@ -20,6 +20,7 @@ VERSION = re.compile(r"v([0-9]+)\.([0-9]+)\.([0-9]+)\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 MEMBERS = {"images.tar.gz", "release.json", "SHA256SUMS"}
 MAX_BYTES = 4 * 1024**3
+USER_AGENT = "finance-deploy/1.0"
 
 
 def command_identity(command):
@@ -93,17 +94,19 @@ def health():
     for _ in range(12):
         try:
             for base in ("http://127.0.0.1:8810", "https://finance.rochzaremba.com"):
-                with urllib.request.urlopen(base + "/api/health", timeout=10) as response:
+                request = urllib.request.Request(base + "/api/health", headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(request, timeout=10) as response:
                     if json.load(response) != {"status": "ok"}:
                         raise ValueError("Unhealthy deployment")
-                with urllib.request.urlopen(base + "/api/config", timeout=10) as response:
+                request = urllib.request.Request(base + "/api/config", headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(request, timeout=10) as response:
                     if json.load(response).get("demo_enabled") is not False:
                         raise ValueError("Production must disable demo")
             return
         except (OSError, ValueError) as error:
             last = error
             time.sleep(3)
-    raise RuntimeError("Origin/public production health check failed") from last
+    raise RuntimeError(f"Origin/public production health check failed: {last}") from last
 
 
 def verify_images(version, commit):
@@ -183,7 +186,10 @@ def deploy(folder, manifest):
         compose(env, "up", "-d", "--no-build", "--wait", "--wait-timeout", "180")
         health()
         request = urllib.request.Request(
-            "https://finance.rochzaremba.com/api/auth/demo", data=b"", headers={"Origin": "https://finance.rochzaremba.com"}, method="POST"
+            "https://finance.rochzaremba.com/api/auth/demo",
+            data=b"",
+            headers={"Origin": "https://finance.rochzaremba.com", "User-Agent": USER_AGENT},
+            method="POST",
         )
         try:
             urllib.request.urlopen(request, timeout=10).close()
