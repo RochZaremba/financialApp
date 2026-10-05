@@ -58,7 +58,7 @@ cd ~/finance/current
  docker compose --env-file .env.production -p finance -f ~/finance/shared/compose.oracle.yaml logs --tail=100 api web
 ```
 
-Przed aktualizacją wykonywany jest backup przy zatrzymanych web/API — oznacza krótką przerwę dostępności. Kopie są prywatne; regularnie kopiuj je poza serwer i sprawdzaj odtworzenie. Monitoruj miejsce na dysku. Pipeline nie usuwa danych ani starszych backupów.
+Przed aktualizacją wykonywany jest backup przy zatrzymanych web/API — oznacza krótką przerwę dostępności. Stop daje API do 130 sekund na dokończenie trwających zapisów/OCR przed backupem (wywołanie AI ma timeout 75 sekund). Kopie są prywatne; regularnie kopiuj je poza serwer i sprawdzaj odtworzenie. Monitoruj miejsce na dysku. Pipeline nie usuwa danych ani starszych backupów.
 
 Jeśli healthcheck nie przejdzie, przywracane są poprzednie obrazy i pozostaje poprzedni `current`. **Baza nie jest automatycznie cofana ani zastępowana backupem**: migracje muszą pozostawać zgodne z poprzednią wersją. Przy niezgodnej migracji odzyskanie może wymagać ręcznej interwencji. Backup pozostaje nawet przy nieudanym release.
 

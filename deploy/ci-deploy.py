@@ -153,7 +153,8 @@ def deploy(folder, manifest):
     stopped = False
     try:
         stopped = True
-        compose(old_env, "stop", "web", "api")
+        # OCR may take 75 seconds; finish in-flight writes before the backup.
+        compose(old_env, "stop", "--timeout", "130", "web", "api")
         with (backup / "database.sql").open("wb") as output:
             compose(old_env, "exec", "-T", "db", "pg_dump", "-U", "dom", "-d", "dom", stdout=output)
         with (backup / "receipts.tar.gz").open("wb") as output:
