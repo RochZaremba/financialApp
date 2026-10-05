@@ -11,6 +11,7 @@ const context = await browser.newContext({
   serviceWorkers: "block",
 });
 const page = await context.newPage();
+await page.clock.setFixedTime(new Date("2026-10-05T12:00:00+02:00"));
 const results = [];
 async function capture(name, width) {
   await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });

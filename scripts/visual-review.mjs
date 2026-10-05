@@ -11,6 +11,7 @@ const context = await browser.newContext({
   timezoneId: "Europe/Warsaw",
 });
 const page = await context.newPage();
+await page.clock.setFixedTime(new Date("2026-10-05T12:00:00+02:00"));
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 await page.setViewportSize({ width: 1440, height: 900 });
