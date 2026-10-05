@@ -3,6 +3,13 @@ import AxeBuilder from "@axe-core/playwright";
 import path from "node:path";
 const fixture = path.resolve("../../fixtures/lidl.png");
 const password = "test-password-for-private-household";
+// All browser projects share the proxy IP. Each creates ten auth attempts;
+// separate projects by the real limiter window rather than weakening security.
+test.beforeAll(async ({}, testInfo) => {
+  if (testInfo.project.name !== "desktop") {
+    await new Promise((resolve) => setTimeout(resolve, 60_000));
+  }
+});
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-05T12:00:00+02:00"));
 });
@@ -646,13 +653,17 @@ test.describe("independent release regressions", () => {
       const invited = await page.request
         .post(root + "/invitations")
         .then((r) => r.json());
-      await second.request.post("/api/auth/register", {
-        data: {
-          name: "Kaja",
-          email: `release-kaja-${unique}@example.com`,
-          password,
-        },
-      });
+      expect(
+        (
+          await second.request.post("/api/auth/register", {
+            data: {
+              name: "Kaja",
+              email: `release-kaja-${unique}@example.com`,
+              password,
+            },
+          })
+        ).status(),
+      ).toBe(201);
       expect(
         (
           await second.request.post("/api/households/join", {
