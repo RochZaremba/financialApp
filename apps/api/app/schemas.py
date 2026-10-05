@@ -2,7 +2,7 @@ import re
 from datetime import date as DateValue
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 Money = Annotated[int, Field(strict=True, ge=0, le=100_000_000_000)]
 SignedMoney = Annotated[int, Field(strict=True, ge=-100_000_000_000, le=100_000_000_000)]
@@ -48,9 +48,29 @@ class AllocationInput(Schema):
     amount: Money
 
 
+class IncomeSourceInput(Schema):
+    name: Name
+    member_id: str | None = Field(default=None, min_length=1, max_length=36)
+    amount: Money
+
+
 class BudgetInput(Schema):
-    planned_income: Money
+    planned_income: Money | None = None
+    income_sources: list[IncomeSourceInput] | None = Field(default=None, max_length=50)
     allocations: list[AllocationInput] = Field(max_length=150)
+
+    @model_validator(mode="after")
+    def income_valid(self):
+        if self.income_sources is None:
+            if self.planned_income is None:
+                raise ValueError("Dodaj źródła dochodu.")
+            return self
+        total = sum(source.amount for source in self.income_sources)
+        if total > 100_000_000_000:
+            raise ValueError("Łączny dochód jest za duży.")
+        if self.planned_income is not None and self.planned_income != total:
+            raise ValueError("Łączny dochód musi zgadzać się ze źródłami.")
+        return self
 
 
 class SplitInput(Schema):

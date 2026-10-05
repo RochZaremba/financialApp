@@ -43,6 +43,7 @@ from .models import (
     Goal,
     Household,
     Invitation,
+    IncomeSource,
     Member,
     Mutation,
     Period,
@@ -283,7 +284,43 @@ def budget_save(household_id: str, month: str, data: BudgetInput, member: Member
         db.add(period)
         db.flush()
     old = {(a.kind, a.reference_id): a for a in db.scalars(select(BudgetAllocation).where(BudgetAllocation.period_id == period.id))}
-    period.planned_income = data.planned_income
+    # PUT replaces the monthly source list atomically; retries cannot append it twice.
+    sources = data.income_sources
+    if sources is not None:
+        pairs = [(" ".join(source.name.casefold().split()), source.member_id) for source in sources]
+        if len(set(pairs)) != len(pairs):
+            raise HTTPException(422, "Ta osoba ma już źródło o tej nazwie. Połącz kwoty lub zmień nazwę.")
+        for source in sources:
+            if source.member_id is not None:
+                scoped(db, Member, household_id, source.member_id)
+    if sources is not None or period.planned_income != data.planned_income:
+        db.execute(delete(IncomeSource).where(IncomeSource.period_id == period.id, IncomeSource.household_id == household_id))
+        if sources is not None:
+            for position, source in enumerate(sources):
+                db.add(
+                    IncomeSource(
+                        household_id=household_id,
+                        period_id=period.id,
+                        position=position,
+                        **source.model_dump(),
+                        created_by=member.user_id,
+                        updated_by=member.user_id,
+                    )
+                )
+            period.planned_income = sum(source.amount for source in sources)
+        else:
+            period.planned_income = data.planned_income
+            if data.planned_income:
+                db.add(
+                    IncomeSource(
+                        household_id=household_id,
+                        period_id=period.id,
+                        position=0,
+                        name="Dochód wspólny",
+                        amount=data.planned_income,
+                        created_by=member.user_id,
+                    )
+                )
     period.updated_by = member.user_id
     keep = set()
     for entry in data.allocations:
@@ -849,6 +886,7 @@ def export(household_id: str, member: Membership, db: Db):
         Category,
         Period,
         BudgetAllocation,
+        IncomeSource,
         Transaction,
         TransactionAllocation,
         Goal,
@@ -888,6 +926,7 @@ def household_delete(household_id: str, data: HouseholdInput, member: Membership
         Recurring,
         ClassificationRule,
         BudgetAllocation,
+        IncomeSource,
         Period,
         Goal,
         Category,

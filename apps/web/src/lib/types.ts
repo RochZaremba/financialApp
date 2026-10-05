@@ -53,10 +53,17 @@ export type Allocation = {
   spent: number;
   remaining: number;
 };
+export type IncomeSource = {
+  id: string;
+  name: string;
+  member_id: string | null;
+  amount: number;
+};
 export type Budget = {
   period: { id: string } | null;
   month: string;
   planned_income: number;
+  income_sources: IncomeSource[];
   assigned: number;
   unassigned: number;
   spent: number;

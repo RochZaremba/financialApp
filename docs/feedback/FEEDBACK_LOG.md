@@ -109,3 +109,17 @@ Verification: hosted fixed PR CI 37338101231 passed 7 frontend, 63 API, 17 deplo
 Status: Verified — real hosted CI, deployment and release publication work; final merge repeats the delivery regression before the milestone is closed.
 
 Follow-up verification: final health/documentation PR #10 passed 19 deployment tests and all existing product gates. [37342261637](https://github.com/RochZaremba/financialApp/actions/runs/37342261637) successfully built, tested, backed up, deployed and published [v0.1.3](https://github.com/RochZaremba/financialApp/releases/tag/v0.1.3), preserving identities, volumes and private configuration. Final review also corrected the three remaining QA browser clocks to match October fixtures, preventing future calendar changes from causing false CI failures. A real browser showed the future-month payout mismatch and correct 250,00 PLN after restoring the QA date. That QA-only fix passes through another protected PR and full release regression before closure; application date behavior is unchanged.
+
+## 2026-10-05 — Nazwane źródła planowanego dochodu
+
+User feedback: zastąpić pojedynczy planowany dochód możliwością dodawania wielu źródeł, nadawania nazw i wskazywania domownika, który dostarcza dochód.
+
+Interpretation: each budget month has its own named planned income sources, optionally shared, with exact integer-grosze amounts. Their server-calculated sum funds the shared budget. Planning does not book actual account income.
+
+Affected areas: monthly planning/read screen, income-source persistence/migration, household authorization, demo seed, export/deletion, browser flows and documentation.
+
+Acceptance criteria: add/edit/remove multiple named sources and assign current household members; show sum and unassigned money immediately; persist after reload and isolate months/households. Preserve existing totals as a shared source without guessing the contributor. Reject foreign members, duplicate name/person pairs and invalid or excessive amounts atomically. Preserve legacy API totals and old plans during deployment/rollback. Test exact grosze, migration, authorization and primary mobile/desktop flows; complete two clean review loops.
+
+Implementation: persisted monthly source records with named contributors and server-derived integer totals; legacy totals migrate as shared income. Added responsive add/edit/remove controls, source summaries, demo salary sources, export/deletion handling, exact-money/authorization/migration tests and browser flows. Save errors stay visible next to the primary action.
+
+Status: Final verification in progress.

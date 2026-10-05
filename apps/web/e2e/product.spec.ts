@@ -94,7 +94,7 @@ test("complete household budget, receipts, goals and second-member flow", async 
   await page
     .getByRole("link", { name: "Zaplanuj miesiąc", exact: true })
     .click();
-  await page.getByLabel("Planowany dochód (zł)").fill("10000");
+  await page.getByLabel("Kwota źródła 1 (zł)").fill("10000");
   await page.getByLabel("Mieszkanie — plan (zł)").fill("2000");
   await page.getByLabel("Jedzenie — plan (zł)").fill("2000");
   await page.getByLabel("Rachunki — plan (zł)").fill("1000");
@@ -519,12 +519,12 @@ test("manual splits, honest photo draft and persisted correction", async ({
   await go(page, "/budzet");
   // Prime both cached households; a dirty form cannot cross the boundary.
   await page.getByLabel("Gospodarstwo", { exact: true }).selectOption(other);
-  await expect(page.getByLabel("Planowany dochód (zł)")).toHaveValue("0,00");
+  await expect(page.getByLabel("Kwota źródła 1 (zł)")).toHaveValue("0,00");
   await page.getByLabel("Gospodarstwo", { exact: true }).selectOption(home);
-  await page.getByLabel("Planowany dochód (zł)").fill("1000");
+  await page.getByLabel("Kwota źródła 1 (zł)").fill("1000");
   await page.getByLabel("Jedzenie — plan (zł)").fill("300");
   await page.getByLabel("Gospodarstwo", { exact: true }).selectOption(other);
-  await expect(page.getByLabel("Planowany dochód (zł)")).toHaveValue("0,00");
+  await expect(page.getByLabel("Kwota źródła 1 (zł)")).toHaveValue("0,00");
   await expect(page.getByLabel("Jedzenie — plan (zł)")).toHaveValue("0,00");
   await page.getByLabel("Gospodarstwo", { exact: true }).selectOption(home);
   await go(page, "/dodaj?type=expense");
@@ -972,5 +972,159 @@ test.describe("independent release regressions", () => {
       await second.close();
       await page.request.delete(root, { data: { name: homeName } });
     }
+  });
+});
+
+test("named income sources, contributors, corrections and independent months", async ({
+  page,
+  browser,
+}, testInfo) => {
+  const unique = crypto.randomUUID();
+  expect(
+    (
+      await page.request.post("/api/auth/register", {
+        data: { name: "Roch", email: `income-${unique}@example.com`, password },
+      })
+    ).status(),
+  ).toBe(201);
+  const homeResponse = await page.request.post("/api/households", {
+    data: { name: `Źródła QA ${unique}` },
+    headers: { "Idempotency-Key": crypto.randomUUID() },
+  });
+  const home = (await homeResponse.json()).id;
+  const invitation = await page.request
+    .post(`/api/households/${home}/invitations`)
+    .then((r) => r.json());
+  const second = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+  });
+  expect(
+    (
+      await second.request.post("/api/auth/register", {
+        data: {
+          name: "Kaja",
+          email: `income-kaja-${unique}@example.com`,
+          password,
+        },
+      })
+    ).status(),
+  ).toBe(201);
+  expect(
+    (
+      await second.request.post("/api/households/join", {
+        data: { token: invitation.token },
+      })
+    ).status(),
+  ).toBe(200);
+  await second.close();
+  const overview = await page.request
+    .get(`/api/households/${home}/overview?month=2026-10`)
+    .then((r) => r.json());
+  const roch = overview.members.find(
+    (m: { name: string }) => m.name === "Roch",
+  ).id;
+  const kaja = overview.members.find(
+    (m: { name: string }) => m.name === "Kaja",
+  ).id;
+  await go(page, "/budzet");
+  await page
+    .getByLabel("Nazwa źródła 1", { exact: true })
+    .fill("Wynagrodzenie");
+  await page.getByLabel("Kwota źródła 1 (zł)", { exact: true }).fill("6000,01");
+  await expect(
+    page.getByLabel("Kto dostarcza dochód 1", { exact: true }),
+  ).toHaveValue(roch);
+  await page.getByRole("button", { name: "Dodaj źródło dochodu" }).click();
+  await page
+    .getByLabel("Nazwa źródła 2", { exact: true })
+    .fill("Wynagrodzenie");
+  await page
+    .getByLabel("Kto dostarcza dochód 2", { exact: true })
+    .selectOption(kaja);
+  await page.getByLabel("Kwota źródła 2 (zł)", { exact: true }).fill("3999,99");
+  await expect(page.locator(".income-total")).toContainText("10 000,00");
+  await page.getByLabel("Jedzenie — plan (zł)").fill("10000");
+  await expect(page.locator(".plan-feedback")).toContainText(
+    "Wszystko przydzielone",
+  );
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 430, height: 932 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await noOverflow(page);
+    expect(
+      (
+        await new AxeBuilder({ page })
+          .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+          .analyze()
+      ).violations,
+    ).toEqual([]);
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement)?.blur();
+      window.scrollTo(0, 0);
+    });
+    await page.screenshot({
+      path: `../../artifacts/ui-review/${process.env.REVIEW_PASS || "income"}/income-edit-${testInfo.project.name}-${viewport.width}.png`,
+      fullPage: true,
+    });
+  }
+  await page.getByRole("button", { name: "Zapisz plan" }).click();
+  await expect(page.locator(".income-source-summary")).toHaveCount(2);
+  await expect(page.locator(".income-overview")).toContainText("Kaja");
+  await page.reload();
+  await expect(page.locator(".income-overview")).toContainText("6 000,01");
+  await expect(page.locator(".income-overview")).toContainText("3 999,99");
+  await page.getByRole("button", { name: "Edytuj plan" }).click();
+  await page
+    .getByLabel("Kto dostarcza dochód 2", { exact: true })
+    .selectOption(roch);
+  await page.getByRole("button", { name: "Zapisz plan" }).click();
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "Ta osoba ma już źródło",
+  );
+  await expect(page.locator("main").getByRole("alert")).toBeInViewport();
+  await page.screenshot({
+    path: `../../artifacts/ui-review/${process.env.REVIEW_PASS || "income"}/income-error-${testInfo.project.name}.png`,
+  });
+  await page.getByLabel("Nazwa źródła 2", { exact: true }).fill("Zlecenia");
+  await page.getByLabel("Kwota źródła 2 (zł)", { exact: true }).fill("500,05");
+  await page.getByRole("button", { name: "Zapisz plan" }).click();
+  await expect(page.locator(".income-overview")).toContainText("Zlecenia");
+  await page.getByLabel("Miesiąc budżetu").fill("2026-11");
+  await expect(page.getByLabel("Kwota źródła 1 (zł)")).toHaveValue("0,00");
+  await page.getByLabel("Kwota źródła 1 (zł)").fill("7000");
+  await page.getByRole("button", { name: "Zapisz plan" }).click();
+  await expect(page.locator(".income-overview")).toContainText("7 000,00");
+  await page.getByLabel("Miesiąc budżetu").fill("2026-10");
+  await expect(page.locator(".income-overview")).toContainText("500,05");
+  await page.getByRole("button", { name: "Edytuj plan" }).click();
+  await page
+    .getByRole("button", { name: "Usuń źródło 2", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Zapisz plan" }).click();
+  await expect(page.locator(".income-source-summary")).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator(".income-source-summary")).toHaveCount(1);
+  await page.getByRole("button", { name: "Edytuj plan" }).click();
+  await page
+    .getByRole("button", { name: "Usuń źródło 1", exact: true })
+    .click();
+  await expect(
+    page.getByText("Nie ma jeszcze źródeł dochodu.", { exact: false }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Zapisz plan" }).click();
+  await expect(page.locator(".income-overview")).toContainText(
+    "Dodaj źródła, gdy znasz planowane dochody.",
+  );
+  const budget = await page.request
+    .get(`/api/households/${home}/budget/2026-10`)
+    .then((r) => r.json());
+  expect(budget.planned_income).toBe(0);
+  expect(budget.income).toBe(0);
+  await page.request.delete(`/api/households/${home}`, {
+    data: { name: `Źródła QA ${unique}` },
   });
 });

@@ -7,7 +7,21 @@ from sqlalchemy import select
 from .config import ROOT, settings
 from .db import SessionLocal
 from .domain import create_transaction, learn
-from .models import Account, BudgetAllocation, Category, Goal, Household, Member, Period, Receipt, ReceiptItem, Recurring, ReviewTask, User
+from .models import (
+    Account,
+    BudgetAllocation,
+    Category,
+    Goal,
+    Household,
+    IncomeSource,
+    Member,
+    Period,
+    Receipt,
+    ReceiptItem,
+    Recurring,
+    ReviewTask,
+    User,
+)
 from .schemas import SplitInput, TransactionInput
 from .security import hasher
 
@@ -75,6 +89,18 @@ def seed():
         period = Period(household_id=home.id, month=month, planned_income=1000000, created_by=roch.id)
         db.add(period)
         db.flush()
+        for position, (person, member, amount) in enumerate(zip([roch, kaja], members, [600000, 400000], strict=True)):
+            db.add(
+                IncomeSource(
+                    household_id=home.id,
+                    period_id=period.id,
+                    name="Wynagrodzenie",
+                    member_id=member.id,
+                    amount=amount,
+                    position=position,
+                    created_by=person.id,
+                )
+            )
         for name, group, _icon, _color, amount in defs:
             db.add(
                 BudgetAllocation(

@@ -88,6 +88,20 @@ class Period(Scoped, Base):
     __table_args__ = (UniqueConstraint("household_id", "month"), CheckConstraint("planned_income >= 0"))
 
 
+class IncomeSource(Scoped, Base):
+    __tablename__ = "income_sources"
+    period_id: Mapped[str] = mapped_column(ForeignKey("periods.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    member_id: Mapped[str | None] = mapped_column(ForeignKey("members.id"))
+    amount: Mapped[int] = mapped_column(BigInteger)
+    position: Mapped[int] = mapped_column(Integer)
+    __table_args__ = (
+        UniqueConstraint("period_id", "position"),
+        CheckConstraint("amount between 0 and 100000000000"),
+        CheckConstraint("position >= 0"),
+    )
+
+
 class BudgetAllocation(Scoped, Base):
     __tablename__ = "budget_allocations"
     period_id: Mapped[str] = mapped_column(ForeignKey("periods.id", ondelete="CASCADE"), index=True)

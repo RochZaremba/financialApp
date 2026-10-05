@@ -19,6 +19,7 @@ import {
   Settings,
   Repeat2,
   CircleCheck,
+  Trash2,
 } from "lucide-react";
 import { api, json } from "@/lib/api";
 import {
@@ -37,6 +38,7 @@ import {
   ErrorMessage,
   Icon,
   MoneyField,
+  Field,
   Progress,
   SectionTitle,
   Select,
@@ -436,7 +438,7 @@ export function BudgetScreen() {
                     Wszystko ma swoje miejsce
                   </>
                 ) : b.planned_income === 0 ? (
-                  "Wpisz planowany dochód"
+                  "Dodaj źródła dochodu"
                 ) : (
                   "Dostosuj kwoty w planie"
                 )}
@@ -448,6 +450,27 @@ export function BudgetScreen() {
               <small>Rzeczywisty dochód tego miesiąca</small>
             </Card>
           </div>
+          <Card className="income-overview">
+            <SectionTitle title="Źródła dochodu" />
+            {b.income_sources.length ? (
+              b.income_sources.map((source) => (
+                <div className="income-source-summary" key={source.id}>
+                  <div>
+                    <strong>{source.name}</strong>
+                    <small>
+                      {data.members.find((m) => m.id === source.member_id)
+                        ?.name || "Wspólny dochód"}
+                    </small>
+                  </div>
+                  <Amount value={source.amount} />
+                </div>
+              ))
+            ) : (
+              <p className="muted">
+                Dodaj źródła, gdy znasz planowane dochody.
+              </p>
+            )}
+          </Card>
           {b.unallocated > 0 && (
             <div className="notice warning">
               <Inbox size={18} />
@@ -549,7 +572,7 @@ export function BudgetScreen() {
   );
 }
 function BudgetEditor({ close }: { close: () => void }) {
-  const { data, household, month } = useApp();
+  const { data, household, month, me } = useApp();
   const command = useCommand();
   const b = data.budget;
   const base: {
@@ -582,7 +605,29 @@ function BudgetEditor({ close }: { close: () => void }) {
       group: "Przyszłość",
     })),
   ];
-  const [income, setIncome] = useState(moneyInput(b.planned_income));
+  const currentMember =
+    data.members.find((m) => m.user_id === me.user.id)?.id || "";
+  const [sources, setSources] = useState(() =>
+    b.income_sources.length
+      ? b.income_sources.map((s) => ({
+          ...s,
+          member_id: s.member_id || "",
+          amount: moneyInput(s.amount),
+        }))
+      : [
+          {
+            id: "initial",
+            name: "Wynagrodzenie",
+            member_id: currentMember,
+            amount: "0,00",
+          },
+        ],
+  );
+  function updateSource(id: string, patch: Partial<(typeof sources)[number]>) {
+    setSources((rows) =>
+      rows.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    );
+  }
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       base.map((a) => [
@@ -601,14 +646,19 @@ function BudgetEditor({ close }: { close: () => void }) {
       return 0;
     }
   };
+  const income = sources.reduce((sum, source) => sum + safe(source.amount), 0);
   const unassigned =
-    safe(income) - Object.values(values).reduce((sum, s) => sum + safe(s), 0);
+    income - Object.values(values).reduce((sum, s) => sum + safe(s), 0);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     await command.run(
       async () => {
         const payload = {
-          planned_income: parseMoney(income),
+          income_sources: sources.map((source) => ({
+            name: source.name.trim(),
+            member_id: source.member_id || null,
+            amount: parseMoney(source.amount),
+          })),
           allocations: base.map((a) => ({
             kind: a.kind,
             reference_id: a.reference_id,
@@ -626,26 +676,107 @@ function BudgetEditor({ close }: { close: () => void }) {
   }
   return (
     <form onSubmit={submit} className="budget-editor">
-      <Card className="plan-income">
-        <div>
-          <h2>Od czego zaczynamy?</h2>
-          <p className="muted">
-            Wpisz dochód, którego spodziewacie się razem w tym miesiącu.
-          </p>
+      <Card className="income-plan">
+        <div className="income-heading">
+          <div>
+            <h2>Skąd będą pieniądze?</h2>
+            <p className="muted">
+              Dodaj dochody, których spodziewacie się w tym miesiącu.
+            </p>
+          </div>
+          <div className="income-total" aria-live="polite">
+            <span className="eyebrow">RAZEM W PLANIE</span>
+            <strong>{money(income)}</strong>
+          </div>
         </div>
-        <MoneyField
-          label="Planowany dochód (zł)"
-          value={income}
-          onChange={(e) => setIncome(e.target.value)}
-          required
-        />
+        <fieldset className="income-fields" disabled={command.busy}>
+          {sources.map((source, index) => (
+            <div
+              className="income-source-editor"
+              key={source.id}
+              role="group"
+              aria-label={`Źródło dochodu ${index + 1}`}
+            >
+              <Field
+                label={`Nazwa źródła ${index + 1}`}
+                placeholder="np. Wynagrodzenie, Zlecenia"
+                maxLength={80}
+                value={source.name}
+                onChange={(e) =>
+                  updateSource(source.id, { name: e.target.value })
+                }
+                required
+              />
+              <Select
+                label={`Kto dostarcza dochód ${index + 1}`}
+                value={source.member_id}
+                onChange={(e) =>
+                  updateSource(source.id, { member_id: e.target.value })
+                }
+              >
+                <option value="">Wspólny dochód</option>
+                {data.members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </Select>
+              <MoneyField
+                label={`Kwota źródła ${index + 1} (zł)`}
+                value={source.amount}
+                onChange={(e) =>
+                  updateSource(source.id, { amount: e.target.value })
+                }
+                required
+              />
+              <button
+                className="button secondary income-remove"
+                type="button"
+                aria-label={`Usuń źródło ${index + 1}`}
+                onClick={() =>
+                  setSources((rows) => rows.filter((s) => s.id !== source.id))
+                }
+              >
+                <Trash2 size={17} />
+                <span>Usuń</span>
+              </button>
+            </div>
+          ))}
+          {!sources.length && (
+            <p className="muted">
+              Nie ma jeszcze źródeł dochodu. Dodaj pierwsze, gdy znasz kwotę.
+            </p>
+          )}
+          <button
+            className="button secondary income-add"
+            type="button"
+            disabled={sources.length >= 50}
+            onClick={() =>
+              setSources((rows) => [
+                ...rows,
+                {
+                  id: crypto.randomUUID(),
+                  name: "",
+                  member_id: currentMember,
+                  amount: "",
+                },
+              ])
+            }
+          >
+            <Plus size={18} />
+            Dodaj źródło dochodu
+          </button>
+        </fieldset>
+        <p className="muted small income-note">
+          To plan. Gdy pieniądze wpłyną na konto, dodaj wpływ w transakcjach.
+        </p>
       </Card>
       <div
-        className={`plan-feedback ${safe(income) > 0 && unassigned === 0 ? "complete" : unassigned < 0 ? "over" : ""}`}
+        className={`plan-feedback ${income > 0 && unassigned === 0 ? "complete" : unassigned < 0 ? "over" : ""}`}
       >
         <span>
-          {safe(income) === 0 && unassigned === 0 ? (
-            "Zacznij od wspólnego dochodu"
+          {income === 0 && unassigned === 0 ? (
+            "Dodaj planowane dochody"
           ) : unassigned === 0 ? (
             <>
               <Check size={19} />
@@ -705,10 +836,10 @@ function BudgetEditor({ close }: { close: () => void }) {
             ))}
         </Card>
       ))}
-      <ErrorMessage error={command.error} />
       <div className="form-actions sticky-actions">
+        <ErrorMessage error={command.error} />
         <span>
-          {safe(income) > 0 && unassigned === 0
+          {income > 0 && unassigned === 0
             ? "Gotowe. Wasz miesiąc ma plan."
             : "Możesz zapisać i dokończyć plan później."}
         </span>
