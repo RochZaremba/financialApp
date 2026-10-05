@@ -62,4 +62,12 @@ with tarfile.open(folder/'populated-receipts.tar.gz') as archive:
     assert archive.extractfile('receipts/qa-backup-marker').read()==b'synthetic backup fixture'
 print('Real populated receipt-volume backup passed.')
 PY
-PRODUCTION_REVIEW_URL=https://budget.localhost:8443 node scripts/production-review.mjs
+if [[ "${PLAYWRIGHT_DOCKER:-0}" == "1" ]]; then
+  browser_version="$(node -p 'require("@playwright/test/package.json").version')"
+  docker run --rm --user "$(id -u):$(id -g)" --network host --ipc=host \
+    -v "$PWD:/work" -w /work -e HOME=/tmp \
+    -e PRODUCTION_REVIEW_URL=https://budget.localhost:8443 \
+    "mcr.microsoft.com/playwright:v${browser_version}-noble" node scripts/production-review.mjs
+else
+  PRODUCTION_REVIEW_URL=https://budget.localhost:8443 node scripts/production-review.mjs
+fi
