@@ -121,6 +121,28 @@ def switch_current(release):
     link.replace(ROOT / "current")
 
 
+def backup_receipts(image, volume, destination):
+    with destination.open("wb") as output:
+        run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--entrypoint",
+                "tar",
+                "--mount",
+                f"type=volume,source={volume},target=/data/receipts,readonly",
+                image,
+                "-C",
+                "/data",
+                "-czf",
+                "-",
+                "receipts",
+            ],
+            stdout=output,
+        )
+
+
 def deploy(folder, manifest):
     version, commit = manifest["version"], manifest["commit"]
     previous = (ROOT / "current").resolve(strict=True)
@@ -157,25 +179,7 @@ def deploy(folder, manifest):
         compose(old_env, "stop", "--timeout", "130", "web", "api")
         with (backup / "database.sql").open("wb") as output:
             compose(old_env, "exec", "-T", "db", "pg_dump", "-U", "dom", "-d", "dom", stdout=output)
-        with (backup / "receipts.tar.gz").open("wb") as output:
-            run(
-                [
-                    "docker",
-                    "run",
-                    "--rm",
-                    "--entrypoint",
-                    "tar",
-                    "--mount",
-                    "type=volume,source=finance_receipt_data,target=/data,readonly",
-                    old_tag,
-                    "-C",
-                    "/data",
-                    "-czf",
-                    "-",
-                    "receipts",
-                ],
-                stdout=output,
-            )
+        backup_receipts(old_tag, "finance_receipt_data", backup / "receipts.tar.gz")
         compose(env, "up", "-d", "--no-build", "--wait", "--wait-timeout", "180")
         health()
         request = urllib.request.Request(

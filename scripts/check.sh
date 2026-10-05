@@ -76,12 +76,18 @@ if [[ "$check_mode" == "full" ]]; then
   if [[ "${PLAYWRIGHT_DOCKER:-0}" == "1" ]]; then
     browser_version="$(node -p 'require("@playwright/test/package.json").version')"
     docker run --rm --user "$(id -u):$(id -g)" --network host --ipc=host \
-      -v "$PWD:/work" -w /work -e WEBKIT="${WEBKIT:-0}" -e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/npm-cache \
-      "mcr.microsoft.com/playwright:v${browser_version}-noble" npm run e2e
+      -v "$PWD:/work" -w /work -e WEBKIT="${WEBKIT:-0}" -e REVIEW_PASS="${REVIEW_PASS:-check}" \
+      -e HOME=/tmp -e NPM_CONFIG_CACHE=/tmp/npm-cache \
+      "mcr.microsoft.com/playwright:v${browser_version}-noble" sh -c '
+        npm run e2e &&
+        node scripts/visual-review.mjs "$REVIEW_PASS" &&
+        node scripts/state-review.mjs "$REVIEW_PASS-states" &&
+        node scripts/release-probes.mjs "$REVIEW_PASS-probes" --verify
+      '
   else
     npm run e2e
+    node scripts/visual-review.mjs "${REVIEW_PASS:-check}"
+    node scripts/state-review.mjs "${REVIEW_PASS:-check}-states"
+    node scripts/release-probes.mjs "${REVIEW_PASS:-check}-probes" --verify
   fi
-  node scripts/visual-review.mjs "${REVIEW_PASS:-check}"
-  node scripts/state-review.mjs "${REVIEW_PASS:-check}-states"
-  node scripts/release-probes.mjs "${REVIEW_PASS:-check}-probes" --verify
 fi

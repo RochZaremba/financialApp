@@ -35,11 +35,10 @@ jobs:
           cache-dependency-path: apps/api/requirements.lock.txt
       - name: Set up isolated development database
         run: ./scripts/setup.sh
-      - name: Install Chromium and WebKit
-        run: npx playwright install --with-deps chromium webkit
       - name: Lint, typecheck, build, migrations, unit/API/E2E and visual checks
         env:
           WEBKIT: '1'
+          PLAYWRIGHT_DOCKER: '1'
           REVIEW_PASS: github-ci
         run: ./scripts/check.sh
       - name: Browser and test evidence

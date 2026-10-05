@@ -54,9 +54,9 @@ jobs:
       - name: Real production HTTPS flows on empty database
         env:
           FINANCE_RELEASE: ${{ steps.version.outputs.version }}
+          PLAYWRIGHT_DOCKER: '1'
         run: |
           npm ci
-          npx playwright install --with-deps chromium
           ./scripts/production-smoke.sh
       - name: Package verified images without secrets
         env:

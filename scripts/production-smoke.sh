@@ -33,4 +33,41 @@ docker compose -p "$qa_project" -f "$task_root/compose.json" up -d --no-build --
 [[ "$(docker compose -p "$qa_project" -f "$task_root/compose.json" exec -T db psql -U dom -d dom -tAc 'SELECT count(*) FROM users')" == 0 ]]
 docker compose -p "$qa_project" -f "$task_root/compose.json" exec -T api python -c 'from pathlib import Path; assert not Path("/app/fixtures").exists(); assert not Path("/app/apps/api/app/seed.py").exists()'
 docker compose -p "$qa_project" -f "$task_root/compose.json" exec -T web sh -c 'test ! -e /app/apps/web/public/demo'
-PRODUCTION_REVIEW_URL=https://budget.localhost:8443 node scripts/production-review.mjs
+# Exercise the actual deployment helper with empty and populated private storage.
+python3 - "$task_root" "$FINANCE_RELEASE" <<'PY'
+import importlib.util,json,tarfile,sys
+from pathlib import Path
+folder=Path(sys.argv[1])
+config=json.loads((folder/'compose.json').read_text())
+volume=config['volumes']['receipt_data']['name']
+spec=importlib.util.spec_from_file_location('receiver','deploy/ci-deploy.py')
+receiver=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(receiver)
+receiver.backup_receipts('finance-api:'+sys.argv[2],volume,folder/'empty-receipts.tar.gz')
+with tarfile.open(folder/'empty-receipts.tar.gz') as archive:
+    assert any(item.isdir() and item.name.rstrip('/')=='receipts' for item in archive)
+print('Real empty receipt-volume backup passed.')
+PY
+docker compose -p "$qa_project" -f "$task_root/compose.json" exec -T api python -c 'from pathlib import Path; Path("/data/receipts/qa-backup-marker").write_text("synthetic backup fixture")'
+python3 - "$task_root" "$FINANCE_RELEASE" <<'PY'
+import importlib.util,json,tarfile,sys
+from pathlib import Path
+folder=Path(sys.argv[1])
+volume=json.loads((folder/'compose.json').read_text())['volumes']['receipt_data']['name']
+spec=importlib.util.spec_from_file_location('receiver','deploy/ci-deploy.py')
+receiver=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(receiver)
+receiver.backup_receipts('finance-api:'+sys.argv[2],volume,folder/'populated-receipts.tar.gz')
+with tarfile.open(folder/'populated-receipts.tar.gz') as archive:
+    assert archive.extractfile('receipts/qa-backup-marker').read()==b'synthetic backup fixture'
+print('Real populated receipt-volume backup passed.')
+PY
+if [[ "${PLAYWRIGHT_DOCKER:-0}" == "1" ]]; then
+  browser_version="$(node -p 'require("@playwright/test/package.json").version')"
+  docker run --rm --user "$(id -u):$(id -g)" --network host --ipc=host \
+    -v "$PWD:/work" -w /work -e HOME=/tmp \
+    -e PRODUCTION_REVIEW_URL=https://budget.localhost:8443 \
+    "mcr.microsoft.com/playwright:v${browser_version}-noble" node scripts/production-review.mjs
+else
+  PRODUCTION_REVIEW_URL=https://budget.localhost:8443 node scripts/production-review.mjs
+fi
