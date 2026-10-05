@@ -1086,6 +1086,20 @@ test("named income sources, contributors, corrections and independent months", a
     "Ta osoba ma już źródło",
   );
   await expect(page.locator("main").getByRole("alert")).toBeInViewport();
+  expect(
+    await page
+      .locator("main")
+      .getByRole("alert")
+      .locator("span")
+      .evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return (
+          document
+            .elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+            ?.closest('[role="alert"]') === element.closest('[role="alert"]')
+        );
+      }),
+  ).toBe(true);
   await page.screenshot({
     path: `../../artifacts/ui-review/${process.env.REVIEW_PASS || "income"}/income-error-${testInfo.project.name}.png`,
   });

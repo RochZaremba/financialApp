@@ -4073,3 +4073,6 @@ select:focus-visible {
   flex-basis: 100%;
   margin: 0;
 }
+.budget-editor > .form-actions {
+  z-index: 4;
+}
