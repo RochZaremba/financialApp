@@ -17,6 +17,8 @@ Release używa zdarzenia `pull_request_target: closed`, ale wszystkie joby zale�
 
 Deploymenty są serializowane w Actions i blokadą na serwerze. GitHub zachowuje aktywny przebieg i najnowszy oczekujący; szybka seria merge może zastąpić starszy oczekujący release. Zamknięcia bez merge mają oddzielne grupy i nie mogą wyprzeć oczekującego deploymentu. Ponowienie tej samej wdrożonej wersji jest idempotentne. Odbiornik odrzuca starszą wersję i zmianę commita pod istniejącym numerem.
 
+Chromium, WebKit i wszystkie przeglądy ekranów działają w [oficjalnym obrazie Playwright](https://playwright.dev/docs/docker), którego tag odpowiada wersji pakietu z lockfile. Obraz zawiera przeglądarki i biblioteki systemowe; CI nie instaluje ich przez apt na każdym runnerze. Potwierdzono manifesty AMD64 i ARM64. Production smoke sprawdza również rzeczywiste archiwizowanie pustego magazynu paragonów i magazynu z syntetycznym plikiem przez ten sam helper, którego używa odbiornik Oracle.
+
 ## Konfiguracja repozytorium
 
 Środowisko **production** dopuszcza tylko branch `main`. Zawiera cztery sekrety:
@@ -62,7 +64,7 @@ Przed aktualizacją wykonywany jest backup przy zatrzymanych web/API — oznacza
 
 Jeśli healthcheck nie przejdzie, przywracane są poprzednie obrazy i pozostaje poprzedni `current`. **Baza nie jest automatycznie cofana ani zastępowana backupem**: migracje muszą pozostawać zgodne z poprzednią wersją. Przy niezgodnej migracji odzyskanie może wymagać ręcznej interwencji. Backup pozostaje nawet przy nieudanym release.
 
-Jeśli deployment udał się, a publikacja Release nie: użyj **Re-run failed jobs** w GitHub Actions. Nie twórz osobnego push/tag jako obejścia. Jeśli wykonasz pełny rerun, odbiornik rozpozna już wdrożony commit. Przed ręcznym rollbackiem sprawdź schemat i manifest; nie używaj `down -v`, `docker system prune` ani automatycznego downgrade.
+Jeśli deployment udał się, a publikacja Release nie: użyj **Re-run failed jobs** w GitHub Actions, zachowując już sprawdzony artefakt. Dotyczy to także ponowienia nieudanego deploymentu. Nie twórz osobnego push/tag jako obejścia. Nie przebudowuj już wdrożonej wersji pełnym rerun: bazowe obrazy mogą się zmienić, a odbiornik rozpoznaje istniejącą wersję idempotentnie. Jeśli artefakt wygasł po 1 dniu, przygotuj kolejny PR i nowe wydanie. Przed ręcznym rollbackiem sprawdź schemat i manifest; nie używaj `down -v`, `docker system prune` ani automatycznego downgrade.
 
 Archiwum release można zweryfikować `sha256sum --check ...sha256`, rozpakować i załadować `docker load -i images.tar.gz` na serwerze ARM64. Nie zawiera konfiguracji infrastruktury ani danych produkcyjnych — używaj zatwierdzonego `compose.oracle.yaml` i własnego prywatnego env.
 
