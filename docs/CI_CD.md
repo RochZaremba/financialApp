@@ -15,7 +15,7 @@ Release używa zdarzenia `pull_request_target: closed`, ale wszystkie joby zale�
 5. **Deploy Oracle** — odbiornik ograniczonego klucza SSH sprawdza wersję, SHA, dozwolone pliki i checksumy, ładuje obrazy i sprawdza ARM64/revision. Przed migracją zatrzymuje web/API na krótki czas i tworzy prywatny backup PostgreSQL oraz zdjęć. Uruchamia release z istniejącymi wolumenami i tym samym hasłem bazy/Gemini. Sprawdza health origin/public i wyłączenie demo.
 6. **Publish** — dopiero po powodzeniu deploymentu tworzy tag i GitHub Release dla dokładnego commita zmerge'owanego PR, z obrazami i sumami. Testy/build/deployment zakończone błędem nie publikują release.
 
-Deploymenty są serializowane w Actions i blokadą na serwerze. GitHub zachowuje aktywny przebieg i najnowszy oczekujący; szybka seria merge może zastąpić starszy oczekujący release. Ponowienie tej samej wdrożonej wersji jest idempotentne. Odbiornik odrzuca starszą wersję i zmianę commita pod istniejącym numerem.
+Deploymenty są serializowane w Actions i blokadą na serwerze. GitHub zachowuje aktywny przebieg i najnowszy oczekujący; szybka seria merge może zastąpić starszy oczekujący release. Zamknięcia bez merge mają oddzielne grupy i nie mogą wyprzeć oczekującego deploymentu. Ponowienie tej samej wdrożonej wersji jest idempotentne. Odbiornik odrzuca starszą wersję i zmianę commita pod istniejącym numerem.
 
 ## Konfiguracja repozytorium
 

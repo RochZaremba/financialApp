@@ -11,7 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-main
+  # Unmerged closes must never displace a pending production deployment.
+  group: release-${{ github.event.pull_request.merged && 'main' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
