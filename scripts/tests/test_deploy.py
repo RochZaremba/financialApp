@@ -131,6 +131,7 @@ def test_success_backs_up_before_migration_and_switches_current(deployment):
     assert "keep-this-password" in (root / "current/.env.production").read_text()
     assert "keep-this-key" in (root / "current/.env.production").read_text()
     stop = next(i for i, (_, args) in enumerate(calls) if args[:1] == ("stop",))
+    assert calls[stop][1] == ("stop", "--timeout", "130", "web", "api")
     backup = next(i for i, (_, args) in enumerate(calls) if "pg_dump" in args)
     upgrade = next(i for i, (name, args) in enumerate(calls) if name == "v0.1.2" and args[:1] == ("up",))
     assert stop < backup < upgrade

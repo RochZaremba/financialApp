@@ -11,7 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-main
+  # Unmerged closes must never displace a pending production deployment.
+  group: release-${{ github.event.pull_request.merged && 'main' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -66,7 +67,7 @@ jobs:
         with:
           name: arm64-release
           compression-level: 0
-          retention-days: 7
+          retention-days: 1
           path: |
             artifacts/release/finance-*.tar
             artifacts/release/*.sha256
