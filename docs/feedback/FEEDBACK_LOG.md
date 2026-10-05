@@ -122,4 +122,6 @@ Acceptance criteria: add/edit/remove multiple named sources and assign current h
 
 Implementation: persisted monthly source records with named contributors and server-derived integer totals; legacy totals migrate as shared income. Added responsive add/edit/remove controls, source summaries, demo salary sources, export/deletion handling, exact-money/authorization/migration tests and browser flows. Save errors stay visible next to the primary action.
 
-Status: Final verification in progress.
+Verification: lint/typecheck/build, 7 frontend, 19 deployment and 67 API tests passed. Two successive complete source flows passed in Chromium desktop/mobile and WebKit, including 30 screenshots across all four widths, accessibility/overflow/alert-occlusion checks, person assignment, reload, corrections, deletion, errors and month isolation. The normal app starts with migration 005 and preserves all existing period amounts. See LOOP_LOG and PR #12 checks for full protected regressions and production delivery.
+
+Status: Verified locally — two consecutive clean changed-flow loops; protected CI verifies the final published commit.
