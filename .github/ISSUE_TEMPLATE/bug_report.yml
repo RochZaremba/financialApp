@@ -1,0 +1,19 @@
+name: Błąd
+description: Problem z działaniem lub wyglądem aplikacji
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Używaj przykładowych danych. Nie dołączaj prywatnych paragonów, eksportów, haseł ani tokenów. Problemy bezpieczeństwa zgłoś prywatnie zgodnie z SECURITY.md."
+  - type: textarea
+    id: steps
+    attributes:
+      label: Jak odtworzyć?
+      description: Ekran i kolejne kroki; oczekiwane i rzeczywiste zachowanie.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Środowisko
+      placeholder: "Wersja release, przeglądarka, telefon/desktop"

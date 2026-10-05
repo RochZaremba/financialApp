@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+**/.next
+.venv
+.env
+.env.*
+**/.env
+**/.env.*
+.git
+data
+**/data
+*.xlsx
+artifacts
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache

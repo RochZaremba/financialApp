@@ -1,0 +1,15 @@
+{
+  "name": "dom-budget",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "lint": "npm run lint --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace apps/web",
+    "test": "npm run test --workspace apps/web",
+    "e2e": "npm run e2e --workspace apps/web"
+  }
+}

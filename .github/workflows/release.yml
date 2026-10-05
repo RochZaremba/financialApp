@@ -1,0 +1,152 @@
+name: Release and deploy
+
+on:
+  # Closed + merged only: even fork contributions are now trusted main code.
+  # Never check out an unmerged fork or expose deployment secrets to PR checks.
+  pull_request_target:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event.pull_request.merged == true
+    name: Verify merged commit
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+  build:
+    name: ARM64 release and production smoke
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Release identity
+        id: version
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: echo "version=v0.1.$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+      - name: Build immutable native images
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          docker build --label "org.opencontainers.image.revision=$COMMIT" -t "finance-api:$VERSION" -f apps/api/Dockerfile .
+          docker build --label "org.opencontainers.image.revision=$COMMIT" -t "finance-web:$VERSION" -f apps/web/Dockerfile .
+      - name: Real production HTTPS flows on empty database
+        env:
+          FINANCE_RELEASE: ${{ steps.version.outputs.version }}
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          ./scripts/production-smoke.sh
+      - name: Package verified images without secrets
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
+        run: ./scripts/package-release.sh "$VERSION" "$COMMIT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arm64-release
+          compression-level: 0
+          retention-days: 7
+          path: |
+            artifacts/release/finance-*.tar
+            artifacts/release/*.sha256
+      - name: Production smoke evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-smoke-${{ github.run_id }}
+          retention-days: 7
+          path: artifacts/ui-review/production-release/
+          if-no-files-found: ignore
+
+  deploy:
+    name: Deploy Oracle
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://finance.rochzaremba.com
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: arm64-release
+          path: release
+      - name: Verify artifact and deploy over restricted SSH
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
+          ORACLE_USER: ${{ secrets.ORACLE_USER }}
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          ORACLE_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum --check "finance-$VERSION-arm64.tar.sha256"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$ORACLE_SSH_KEY" > "$HOME/.ssh/finance-deploy"
+          printf '%s\n' "$ORACLE_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/finance-deploy" "$HOME/.ssh/known_hosts"
+          trap 'rm -f "$HOME/.ssh/finance-deploy"' EXIT
+          ssh -i "$HOME/.ssh/finance-deploy" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            "$ORACLE_USER@$ORACLE_HOST" "deploy $VERSION $COMMIT" < "finance-$VERSION-arm64.tar"
+
+  publish:
+    name: Publish GitHub Release
+    needs: [build, deploy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: arm64-release
+          path: release
+      - name: Publish the successfully deployed commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+          COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" > /dev/null 2>&1; then
+            echo "Release $VERSION already published."
+            exit 0
+          fi
+          cat > notes.md <<EOF
+          Release from merged PR #$PR_NUMBER, commit $COMMIT.
+
+          Full quality gates and native ARM64 production smoke passed. Deployed successfully to https://finance.rochzaremba.com with preserved data and a pre-deployment backup.
+
+          Verification: $RUN_URL
+
+          Assets: native API/web Docker images, release metadata and checksums. No environment files, credentials or household data.
+          EOF
+          gh release create "$VERSION" release/* --target "$COMMIT" \
+            --title "Razem. $VERSION" --notes-file notes.md --generate-notes

@@ -1,0 +1,71 @@
+# Oracle ARM64; HTTPS is handled by the existing host Caddy.
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dom
+      POSTGRES_USER: dom
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong production database password}
+    volumes:
+    - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U dom -d dom
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    platform: linux/arm64
+  api:
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://dom:${POSTGRES_PASSWORD}@db:5432/dom
+      WEB_ORIGIN: https://${DOMAIN:?Set your HTTPS domain}
+      RECEIPT_STORAGE: /data/receipts
+      RECEIPT_PROVIDER: ${RECEIPT_PROVIDER:-manual}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.1-flash-lite}
+    volumes:
+    - receipt_data:/data/receipts
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',
+        timeout=3)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+    image: finance-api:${FINANCE_RELEASE:?Set the staged release tag}
+    platform: linux/arm64
+  web:
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    image: finance-web:${FINANCE_RELEASE:?Set the staged release tag}
+    platform: linux/arm64
+    ports:
+    - 127.0.0.1:8810:3000
+volumes:
+  postgres_data: null
+  receipt_data: null

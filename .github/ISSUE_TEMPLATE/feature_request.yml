@@ -1,0 +1,10 @@
+name: Pomysł
+description: Propozycja usprawnienia wspólnego budżetu
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Co ma być łatwiejsze?
+      description: Opisz sytuację użytkownika i oczekiwany efekt.
+    validations:
+      required: true
