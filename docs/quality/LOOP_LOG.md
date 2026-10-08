@@ -302,3 +302,11 @@ Copy visual review found P2 despite green desktop/mobile flow checks: the fixed 
 Kryteria: cykle tygodniowe/miesięczne/kwartalne/roczne, stabilne kotwice na końcu miesiąca i lata przestępne; jeden wydatek na potwierdzony termin; oczekiwania nigdy nie tworzą wydatków automatycznie; przypomnienia w aplikacji i prywatny plik kalendarza z alarmami.
 
 Pierwsze testy wykryły P1: daty nowego harmonogramu nie serializowały się w odcisku idempotencji. Ujednolicono serializację wartości dat. Osiem celowanych testów przechodzi; pełna regresja po integracji z kopiowaniem jest wymagana. Dodano E2E: utworzenie rocznej płatności w UI, przypomnienie, pobranie kalendarza, zapłata i bezpieczne ponowienie, tygodniowe terminy, cztery viewporty oraz axe.
+
+## 2026-10-08 — dokładniejsze wyszukiwanie (osobny branch)
+
+Wynik: filtrowanie po koncie źródłowym/docelowym, kategorii, zakresie dat, dokładnych kwotach oraz sortowanie i wyszukiwanie nazw pozycji paragonów. Wszystkie filtry są autoryzowane na serwerze, a podział transakcji nie powiela wyników. Zwykłe wyszukiwanie tekstu nadal działa bez dodatkowego kliknięcia.
+
+Kryteria: stabilna paginacja; dosłowne `%` i `_`; poprawne zakresy; historyczne kategorie; żadnych obcych kont/kategorii. Wstępnie: 85 testów API, lint, typecheck i build przeszły. Dodano przepływ E2E z przeglądem czterech wymaganych viewportów i axe. Pełne dwie pętle zostaną zapisane po weryfikacji PR.
+
+Copy exit: corrected code passed 85 API tests and 27 full Chromium/WebKit E2E in `copy-clean-1`; this local run was interrupted during the additional state review, so it is not counted as a complete suite. Independent full [CI 37778709483](https://github.com/RochZaremba/financialApp/actions/runs/37778709483) passed all gates. Two consecutive clean runs of the changed primary flow are `copy-clean-1` and `copy-clean-2` (three browser projects, exact four viewport screenshots, axe, no overflow). Direct screenshot review found no remaining P0/P1/P2 after the save-bar fix. PR #17 merged as `3177dd4`.

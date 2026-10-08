@@ -1049,7 +1049,7 @@ function CategorizeTransaction({ transaction }: { transaction: Transaction }) {
   );
 }
 export function TransactionsScreen() {
-  const { household, month } = useApp();
+  const { household, month, data } = useApp();
   const params = useSearchParams();
   const editId = params.get("edit");
   const focusedId = editId || params.get("item");
@@ -1059,16 +1059,68 @@ export function TransactionsScreen() {
       api<Transaction>(`/households/${household}/transactions/${focusedId}`),
     enabled: !!focusedId,
   });
-  const [kind, setKind] = useState("");
-  const [search, setSearch] = useState("");
+  const empty = {
+    search: "",
+    kind: "",
+    period: "month",
+    category_id: "",
+    account_id: "",
+    date_from: "",
+    date_to: "",
+    min_amount: "",
+    max_amount: "",
+    sort: "newest",
+  };
+  const [draft, setDraft] = useState(empty);
+  const [filters, setFilters] = useState(empty);
+  const [filterError, setFilterError] = useState("");
   const [offset, setOffset] = useState(0);
+  function applyFilters(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    try {
+      const min = draft.min_amount ? parseMoney(draft.min_amount) : null;
+      const max = draft.max_amount ? parseMoney(draft.max_amount) : null;
+      if (min !== null && max !== null && min > max)
+        throw new Error("Kwota od nie może przekraczać kwoty do.");
+      if (
+        draft.period === "range" &&
+        draft.date_from &&
+        draft.date_to &&
+        draft.date_from > draft.date_to
+      )
+        throw new Error("Data od nie może być późniejsza niż data do.");
+      setFilters({ ...draft });
+      setOffset(0);
+      setFilterError("");
+    } catch (error) {
+      setFilterError(
+        error instanceof Error ? error.message : "Sprawdź filtry.",
+      );
+    }
+  }
+  const queryParams = new URLSearchParams({
+    offset: String(offset),
+    sort: filters.sort,
+  });
+  if (filters.period === "month") queryParams.set("month", month);
+  if (filters.period === "range")
+    for (const key of ["date_from", "date_to"] as const)
+      if (filters[key]) queryParams.set(key, filters[key]);
+  for (const key of ["search", "kind", "category_id", "account_id"] as const)
+    if (filters[key]) queryParams.set(key, filters[key]);
+  for (const key of ["min_amount", "max_amount"] as const)
+    if (filters[key]) queryParams.set(key, String(parseMoney(filters[key])));
   const result = useQuery({
-    queryKey: ["transactions", household, month, kind, search, offset],
+    queryKey: ["transactions", household, month, queryParams.toString()],
     queryFn: () =>
       api<{ items: Transaction[]; has_more: boolean }>(
-        `/households/${household}/transactions?month=${month}&kind=${kind}&search=${encodeURIComponent(search)}&offset=${offset}`,
+        `/households/${household}/transactions?${queryParams}`,
       ),
   });
+  const filtered = Object.keys(filters).some(
+    (key) =>
+      filters[key as keyof typeof filters] !== empty[key as keyof typeof empty],
+  );
   if (editId)
     return (
       <>
@@ -1129,36 +1181,147 @@ export function TransactionsScreen() {
         }
       />
       <Card className="timeline-card">
-        <div className="timeline-filters">
-          <div className="search-field">
-            <Search size={18} />
-            <input
-              aria-label="Szukaj transakcji"
-              placeholder="Szukaj po nazwie…"
-              value={search}
+        <form onSubmit={applyFilters} className="transaction-search">
+          <div className="timeline-filters">
+            <Field
+              label="Szukaj transakcji"
+              placeholder="Nazwa zakupu, opis lub produkt z paragonu…"
               maxLength={160}
+              value={draft.search}
               onChange={(e) => {
-                setSearch(e.target.value);
+                setDraft({ ...draft, search: e.target.value });
+                setFilters({ ...filters, search: e.target.value });
                 setOffset(0);
               }}
             />
+            <Select
+              label="Rodzaj"
+              value={draft.kind}
+              onChange={(e) => {
+                setDraft({ ...draft, kind: e.target.value });
+                setFilters({ ...filters, kind: e.target.value });
+                setOffset(0);
+              }}
+            >
+              <option value="">Wszystkie transakcje</option>
+              <option value="expense">Wydatki</option>
+              <option value="income">Wpływy</option>
+              <option value="pocket">Kieszonkowe</option>
+              <option value="saving">Oszczędności</option>
+              <option value="transfer">Przelewy</option>
+            </Select>
           </div>
-          <Select
-            label="Rodzaj"
-            value={kind}
-            onChange={(e) => {
-              setKind(e.target.value);
-              setOffset(0);
-            }}
-          >
-            <option value="">Wszystkie transakcje</option>
-            <option value="expense">Wydatki</option>
-            <option value="income">Wpływy</option>
-            <option value="pocket">Kieszonkowe</option>
-            <option value="saving">Oszczędności</option>
-            <option value="transfer">Przelewy</option>
-          </Select>
-        </div>
+          <details className="planning-tool">
+            <summary>Dokładniejsze filtry</summary>
+            <div className="form-grid">
+              <Select
+                label="Okres wyszukiwania"
+                value={draft.period}
+                onChange={(e) => setDraft({ ...draft, period: e.target.value })}
+              >
+                <option value="month">Wybrany miesiąc</option>
+                <option value="range">Własny zakres dat</option>
+                <option value="all">Cała historia</option>
+              </Select>
+              <Select
+                label="Sortuj transakcje"
+                value={draft.sort}
+                onChange={(e) => setDraft({ ...draft, sort: e.target.value })}
+              >
+                <option value="newest">Najnowsze</option>
+                <option value="oldest">Najstarsze</option>
+                <option value="amount_desc">Największa kwota</option>
+                <option value="amount_asc">Najmniejsza kwota</option>
+              </Select>
+              {draft.period === "range" && (
+                <>
+                  <Field
+                    label="Data od"
+                    type="date"
+                    min="2000-01-01"
+                    max="2100-12-31"
+                    value={draft.date_from}
+                    onChange={(e) =>
+                      setDraft({ ...draft, date_from: e.target.value })
+                    }
+                  />
+                  <Field
+                    label="Data do"
+                    type="date"
+                    min="2000-01-01"
+                    max="2100-12-31"
+                    value={draft.date_to}
+                    onChange={(e) =>
+                      setDraft({ ...draft, date_to: e.target.value })
+                    }
+                  />
+                </>
+              )}
+              <Select
+                label="Kategoria wyszukiwania"
+                value={draft.category_id}
+                onChange={(e) =>
+                  setDraft({ ...draft, category_id: e.target.value })
+                }
+              >
+                <option value="">Wszystkie kategorie</option>
+                {data.categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.archived ? " (archiwalna)" : ""}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="Konto wyszukiwania"
+                value={draft.account_id}
+                onChange={(e) =>
+                  setDraft({ ...draft, account_id: e.target.value })
+                }
+              >
+                <option value="">Wszystkie konta</option>
+                {data.accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.currency})
+                  </option>
+                ))}
+              </Select>
+              <MoneyField
+                label="Kwota transakcji od (zł)"
+                value={draft.min_amount}
+                onChange={(e) =>
+                  setDraft({ ...draft, min_amount: e.target.value })
+                }
+              />
+              <MoneyField
+                label="Kwota transakcji do (zł)"
+                value={draft.max_amount}
+                onChange={(e) =>
+                  setDraft({ ...draft, max_amount: e.target.value })
+                }
+              />
+            </div>
+          </details>
+          <ErrorMessage error={filterError} />
+          <div className="form-actions">
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => {
+                setDraft(empty);
+                setFilters(empty);
+                setOffset(0);
+                setFilterError("");
+              }}
+            >
+              Wyczyść filtry
+            </button>
+            <button type="submit" className="button primary">
+              <Search size={17} />
+              Szukaj
+            </button>
+          </div>
+        </form>
         {result.isPending ? (
           <Skeleton />
         ) : result.isError ? (
@@ -1195,16 +1358,16 @@ export function TransactionsScreen() {
         ) : (
           <Empty
             title={
-              search || kind
+              filtered
                 ? "Brak pasujących transakcji"
                 : "Tutaj pojawi się Wasza historia"
             }
             description={
-              search || kind
+              filtered
                 ? "Zmień nazwę lub filtr, aby zobaczyć więcej."
                 : "Dodaj pierwszy wpływ lub wydatek w tym miesiącu."
             }
-            action={search || kind ? undefined : "Dodaj transakcję"}
+            action={filtered ? undefined : "Dodaj transakcję"}
             href="/dodaj"
           />
         )}

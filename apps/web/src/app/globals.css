@@ -4083,6 +4083,17 @@ select:focus-visible {
   z-index: 4;
 }
 
+.transaction-search {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+}
+.transaction-search .timeline-filters {
+  align-items: end;
+}
+.transaction-search .timeline-filters .field > span {
+  display: block;
+}
 .planning-tool > summary {
   padding: 14px 0;
   min-height: 44px;
