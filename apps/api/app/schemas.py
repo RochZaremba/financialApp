@@ -1,5 +1,5 @@
 import re
-from datetime import date as DateValue
+from datetime import date as DateValue, datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
@@ -88,6 +88,10 @@ class TransactionInput(Schema):
     member_id: str | None = None
     goal_id: str | None = None
     allocations: list[SplitInput] = Field(default_factory=list, max_length=150)
+
+
+class TransactionEditInput(TransactionInput):
+    expected_updated_at: datetime
 
 
 class GoalInput(Schema):
