@@ -316,3 +316,11 @@ Search visual review found P2 after the first green API/E2E pass: mobile advance
 Recurring exit: [CI 37782004715](https://github.com/RochZaremba/financialApp/actions/runs/37782004715) passed the complete frozen-source suite. Independent `recurring-clean-1` passed the actual create/remind/calendar/confirm/retry/weekly/reload flow in three browser projects with exact four viewport screenshots, axe and no overflow. Screenshots directly inspected under `/tmp/financial-recurring/artifacts/ui-review/recurring-clean-1/`; no known P0/P1/P2 remains in this changed flow. PR #19 merged as `455a72d`. Initial failed builds, date serialization and incorrect list-count assertions are excluded from clean evidence.
 
 Search exit on the corrected mobile layout: full [CI 37782966182](https://github.com/RochZaremba/financialApp/actions/runs/37782966182) and independent `search-clean-2` passed the changed flow on Chromium/WebKit and four exact viewports. Directly reviewed mobile/desktop screenshots, no remaining clipped selected filter labels or known P0/P1/P2. Rebase onto merged recurring main now triggers another protected complete regression before merge.
+
+## 2026-10-08 — rozliczanie sald kopert i nadwyżki
+
+Kryteria: podgląd przeniesienia do następnego miesiąca albo procentowego podziału do kont oszczędnościowych/celów; dokładne grosze, realne wpływy, brak podwójnego dochodu, powtórzeń i debetu; zapamiętane proporcje; stare miesiące nie zmieniają przeniesionych pieniędzy. Zamknięcie miesiąca jest jawne w UI.
+
+Implementacja: migracja 008, osobny immutable ledger, odcisk podglądu i serializacja zapisów gospodarstwa; przychodzące środki nie są przychodem ani częścią nowego przydziału. Przelewy oszczędności są przypisane do rezerwy miesiąca źródłowego i nie obciążają ponownie budżetu następnego miesiąca. Zamknięte finanse są chronione także przy ponownej kategoryzacji i finalizacji paragonu.
+
+Wstępna pełna regresja API: 96 testów przechodzi. Dodane testy obejmują zachowanie wpływów/sald/celów, replay, stale preview, zamknięty miesiąc, nadwyżkę netto, konta/proporcje i eksport/usunięcie. Dodano E2E obu wariantów, cztery viewporty oraz axe. Pełne pętle po integracji są wymagane; pierwszych błędnych asercji kontraktu listy transakcji nie zaliczono jako czystej pętli.

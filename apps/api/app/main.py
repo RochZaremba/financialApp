@@ -35,10 +35,20 @@ from .domain import (
     transaction_data,
     validate_transaction,
 )
+from .settlements import (
+    SettlementInput,
+    SettlementConfirm,
+    preview as settlement_preview,
+    confirm as settlement_confirm,
+    ensure_open,
+    policy as surplus_policy,
+)
 from .exchange import value_accounts
 from .middleware import RequestBodyLimit
 from .models import (
     Account,
+    BudgetSettlement,
+    SurplusPolicy,
     Audit,
     BudgetAllocation,
     Category,
@@ -301,6 +311,7 @@ def budget_save(
             if previous.request_hash != signature:
                 raise HTTPException(409, "Ten zapis już istnieje z innymi danymi. Odśwież formularz.")
             return budget_data(db, household_id, month)
+    ensure_open(db, household_id, month)
     period = db.scalar(select(Period).where(Period.household_id == household_id, Period.month == month))
     if "expected_updated_at" in data.model_fields_set and data.expected_updated_at != (period.updated_at if period else None):
         raise HTTPException(409, "Ten plan został zmieniony. Odśwież stronę przed ponownym zapisem.")
@@ -559,6 +570,9 @@ def transaction_edit(household_id: str, transaction_id: str, data: TransactionEd
         if previous.request_hash != signature:
             raise HTTPException(409, "Ten zapis już istnieje z innymi danymi. Odśwież formularz.")
         return transaction_data(db, tx)
+    ensure_open(db, household_id, tx.date.strftime("%Y-%m"))
+    if tx.source == "surplus":
+        raise HTTPException(409, "Ten przelew należy do zamkniętego rozliczenia nadwyżki.")
     if data.expected_updated_at != tx.updated_at:
         raise HTTPException(409, "Ta transakcja została zmieniona. Odśwież ją przed ponowną edycją.")
     if data.kind != tx.kind:
@@ -608,7 +622,9 @@ def transaction_edit(household_id: str, transaction_id: str, data: TransactionEd
 
 @app.put("/households/{household_id}/transactions/{transaction_id}/allocations")
 def transaction_categorize(household_id: str, transaction_id: str, data: list[SplitInput], member: Membership, db: Db):
+    db.scalar(select(Household).where(Household.id == household_id).with_for_update())
     tx = scoped(db, Transaction, household_id, transaction_id, lock=True)
+    ensure_open(db, household_id, tx.date.strftime("%Y-%m"))
     if tx.kind != "expense" or sum(a.amount for a in data) != tx.amount or len({a.category_id for a in data}) != len(data):
         raise HTTPException(422, "Suma kategorii musi być równa kwocie wydatku.")
     for entry in data:
@@ -1082,7 +1098,7 @@ def analytics(household_id: str, month: str, member: Membership, db: Db):
     return dict(
         budget=budget,
         forecast=forecast,
-        forecast_remaining=budget["planned_income"] - forecast if forecast is not None else None,
+        forecast_remaining=budget["available"] - budget["carry_out"] - forecast if forecast is not None else None,
         elapsed_days=elapsed,
         days_in_month=end.day,
         outstanding_recurring=outstanding,
@@ -1095,6 +1111,8 @@ def analytics(household_id: str, month: str, member: Membership, db: Db):
 @app.get("/households/{household_id}/export")
 def export(household_id: str, member: Membership, db: Db):
     models = [
+        BudgetSettlement,
+        SurplusPolicy,
         Member,
         Account,
         Category,
@@ -1133,6 +1151,8 @@ def household_delete(household_id: str, data: HouseholdInput, member: Membership
     paths = [storage_path(r.path) for r in records(db, Receipt, household_id)]
     # Delete in dependency order to preserve FK integrity.
     for model in [
+        BudgetSettlement,
+        SurplusPolicy,
         ReviewTask,
         ReceiptItem,
         Receipt,
@@ -1175,3 +1195,20 @@ def demo(request: Request, response: Response, db: Db):
 @app.get("/config")
 def public_config():
     return {"demo_enabled": settings.app_env == "development"}
+
+
+@app.get("/households/{household_id}/surplus-policy")
+def surplus_policy_read(household_id: str, member: Membership, db: Db):
+    return surplus_policy(db, household_id)
+
+
+@app.post("/households/{household_id}/budget/{month}/settlement-preview")
+def budget_settlement_preview(household_id: str, month: str, data: SettlementInput, member: Membership, db: Db):
+    return settlement_preview(db, household_id, month, data)
+
+
+@app.post("/households/{household_id}/budget/{month}/settle")
+def budget_settle(household_id: str, month: str, data: SettlementConfirm, member: Membership, db: Db):
+    result = settlement_confirm(db, member, month, data)
+    db.commit()
+    return result

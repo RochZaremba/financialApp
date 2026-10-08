@@ -258,3 +258,19 @@ class Mutation(Scoped, Base):
     request_hash: Mapped[str] = mapped_column(String(64))
     entity_id: Mapped[str] = mapped_column(String(36))
     __table_args__ = (UniqueConstraint("household_id", "key"),)
+
+
+class BudgetSettlement(Scoped, Base):
+    __tablename__ = "budget_settlements"
+    source_month: Mapped[str] = mapped_column(String(7))
+    target_month: Mapped[str] = mapped_column(String(7))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    result: Mapped[dict] = mapped_column(JSON)
+    __table_args__ = (UniqueConstraint("household_id", "source_month"),)
+
+
+class SurplusPolicy(Scoped, Base):
+    __tablename__ = "surplus_policies"
+    targets: Mapped[list] = mapped_column(JSON)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"))
+    __table_args__ = (UniqueConstraint("household_id"),)

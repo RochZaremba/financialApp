@@ -4149,3 +4149,37 @@ select:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.surplus-form {
+  margin-top: 18px;
+}
+.surplus-target {
+  border-top: 1px solid var(--border);
+  padding: 18px 0;
+}
+.surplus-preview {
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+  padding-top: 16px;
+}
+.surplus-preview-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.surplus-preview-row strong {
+  white-space: nowrap;
+}
+.settlement-summary {
+  margin-bottom: 24px;
+}
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+.checkbox-field input {
+  width: 20px;
+  height: 20px;
+}
