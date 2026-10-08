@@ -171,7 +171,7 @@ test("review a complete budget proposal and apply it only to the draft", async (
   expect(saved.planned_income).toBe(100001);
   expect(
     (await page.request.get(`${route}/transactions`).then((r) => r.json()))
-      .total,
+      .items.length,
   ).toBe(0);
   await page.request.delete(route, { data: { name } });
 });
