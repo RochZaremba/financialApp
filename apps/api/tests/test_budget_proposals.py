@@ -126,3 +126,18 @@ def test_real_provider_protocol_uses_strict_json_and_aggregate_context(monkeypat
     else:
         assert payload["generationConfig"]["responseFormat"]["text"]["mimeType"] == "APPLICATION_JSON"
     assert "receipt" not in json.dumps(payload).lower()
+
+
+@pytest.mark.parametrize(
+    "provider,body",
+    [("openai", []), ("openai", {"status": "incomplete"}), ("gemini", []), ("gemini", {"candidates": [{"finishReason": "SAFETY"}]})],
+)
+def test_malformed_or_incomplete_provider_envelope_is_recoverable(monkeypatch, provider, body):
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(settings, "budget_ai_provider", provider)
+    monkeypatch.setattr(settings, provider + "_api_key", "test-only-key")
+    monkeypatch.setattr("app.planning.httpx.post", lambda url, **kwargs: httpx.Response(200, json=body, request=httpx.Request("POST", url)))
+    with pytest.raises(HTTPException) as error:
+        ai_proposal(dict(category_pool=0, categories=[]))
+    assert error.value.status_code == 502

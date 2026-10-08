@@ -202,7 +202,7 @@ def ai_proposal(data):
                 raise ValueError("Incomplete proposal")
             text = "".join(p.get("text", "") for p in candidates[0].get("content", {}).get("parts", []) if not p.get("thought"))
         return Proposal.model_validate_json(text)
-    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
         raise HTTPException(502, "AI nie zwróciło poprawnej propozycji. Spróbuj ponownie lub użyj historii.") from None
 
 

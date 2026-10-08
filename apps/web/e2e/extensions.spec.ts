@@ -144,6 +144,25 @@ test("review a complete budget proposal and apply it only to the draft", async (
   await page.getByLabel("Kwota źródła 1 (zł)", { exact: true }).fill("1000,01");
   await page.getByLabel(`${data.members[0].name} — plan (zł)`).fill("200");
   await page.getByText("Pomóż mi rozdzielić budżet", { exact: true }).click();
+  await page.route(
+    "**/budget/*/proposal",
+    (route) =>
+      route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Nie udało się przygotować propozycji. Spróbuj ponownie.",
+        }),
+      }),
+    { times: 1 },
+  );
+  await page
+    .getByRole("button", { name: "Na podstawie historii", exact: true })
+    .click();
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "Spróbuj ponownie.",
+  );
+  await review(page, "budget-proposal-error", info);
   await page
     .getByRole("button", { name: "Na podstawie historii", exact: true })
     .click();
@@ -156,6 +175,17 @@ test("review a complete budget proposal and apply it only to the draft", async (
       .period,
   ).toBeNull();
   await review(page, "budget-proposal", info);
+  await page.getByLabel("Kwota źródła 1 (zł)", { exact: true }).fill("1100,01");
+  await page
+    .getByRole("button", { name: "Zastosuj propozycję do szkicu" })
+    .click();
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "Szkic zmienił się",
+  );
+  await page
+    .getByRole("button", { name: "Na podstawie historii", exact: true })
+    .click();
+  await expect(page.locator(".budget-proposal")).toContainText("900,01");
   await page
     .getByRole("button", { name: "Zastosuj propozycję do szkicu" })
     .click();
@@ -168,7 +198,7 @@ test("review a complete budget proposal and apply it only to the draft", async (
     .get(`${route}/budget/2026-10`)
     .then((r) => r.json());
   expect(saved.unassigned).toBe(0);
-  expect(saved.planned_income).toBe(100001);
+  expect(saved.planned_income).toBe(110001);
   expect(
     (await page.request.get(`${route}/transactions`).then((r) => r.json()))
       .items.length,
