@@ -13,3 +13,5 @@ Structured provider output is validated again on the server: exact household cat
 ## Consequences
 
 No model advice is treated as certain or as an automatic bank movement. Automated verification uses mocked providers and deterministic history rather than paid calls. `BUDGET_AI_PROVIDER=auto` reuses the receipt provider; `history` disables model assistance while keeping history assistance available.
+
+Incoming envelope carry is already earmarked money. Proposal allocations assign only new income. Scheduled-expense minimums subtract that category's carried amount, so a carried envelope is not funded twice; carry remains independent of applying or saving a proposal.

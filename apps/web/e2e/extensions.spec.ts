@@ -59,6 +59,15 @@ async function review(page: Page, label: string, testInfo: TestInfo) {
           .analyze()
       ).violations,
     ).toEqual([]);
+    // Axe can focus the skip link; restore the primary control before capture.
+    await page
+      .getByRole("button", {
+        name: label.startsWith("budget-proposal")
+          ? "Na podstawie historii"
+          : "Pokaż plan do skopiowania",
+        exact: true,
+      })
+      .focus();
     await page.screenshot({
       path: `../../artifacts/ui-review/${process.env.REVIEW_PASS || "extensions"}/${label}-${testInfo.project.name}-${viewport.width}.png`,
       fullPage: true,
