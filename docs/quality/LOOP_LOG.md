@@ -302,3 +302,17 @@ Copy visual review found P2 despite green desktop/mobile flow checks: the fixed 
 Kryteria: cykle tygodniowe/miesięczne/kwartalne/roczne, stabilne kotwice na końcu miesiąca i lata przestępne; jeden wydatek na potwierdzony termin; oczekiwania nigdy nie tworzą wydatków automatycznie; przypomnienia w aplikacji i prywatny plik kalendarza z alarmami.
 
 Pierwsze testy wykryły P1: daty nowego harmonogramu nie serializowały się w odcisku idempotencji. Ujednolicono serializację wartości dat. Osiem celowanych testów przechodzi; pełna regresja po integracji z kopiowaniem jest wymagana. Dodano E2E: utworzenie rocznej płatności w UI, przypomnienie, pobranie kalendarza, zapłata i bezpieczne ponowienie, tygodniowe terminy, cztery viewporty oraz axe.
+
+## 2026-10-08 — dokładniejsze wyszukiwanie (osobny branch)
+
+Wynik: filtrowanie po koncie źródłowym/docelowym, kategorii, zakresie dat, dokładnych kwotach oraz sortowanie i wyszukiwanie nazw pozycji paragonów. Wszystkie filtry są autoryzowane na serwerze, a podział transakcji nie powiela wyników. Zwykłe wyszukiwanie tekstu nadal działa bez dodatkowego kliknięcia.
+
+Kryteria: stabilna paginacja; dosłowne `%` i `_`; poprawne zakresy; historyczne kategorie; żadnych obcych kont/kategorii. Wstępnie: 85 testów API, lint, typecheck i build przeszły. Dodano przepływ E2E z przeglądem czterech wymaganych viewportów i axe. Pełne dwie pętle zostaną zapisane po weryfikacji PR.
+
+Copy exit: corrected code passed 85 API tests and 27 full Chromium/WebKit E2E in `copy-clean-1`; this local run was interrupted during the additional state review, so it is not counted as a complete suite. Independent full [CI 37778709483](https://github.com/RochZaremba/financialApp/actions/runs/37778709483) passed all gates. Two consecutive clean runs of the changed primary flow are `copy-clean-1` and `copy-clean-2` (three browser projects, exact four viewport screenshots, axe, no overflow). Direct screenshot review found no remaining P0/P1/P2 after the save-bar fix. PR #17 merged as `3177dd4`.
+
+Search visual review found P2 after the first green API/E2E pass: mobile advanced selects clipped their selected labels in two columns. Changed the advanced fields to one column below 600 px; screenshots now focus the search field after axe to avoid capturing axe's temporary skip-link focus. Stopped the old supplementary QA review. The first run is not counted as a clean final loop.
+
+Recurring exit: [CI 37782004715](https://github.com/RochZaremba/financialApp/actions/runs/37782004715) passed the complete frozen-source suite. Independent `recurring-clean-1` passed the actual create/remind/calendar/confirm/retry/weekly/reload flow in three browser projects with exact four viewport screenshots, axe and no overflow. Screenshots directly inspected under `/tmp/financial-recurring/artifacts/ui-review/recurring-clean-1/`; no known P0/P1/P2 remains in this changed flow. PR #19 merged as `455a72d`. Initial failed builds, date serialization and incorrect list-count assertions are excluded from clean evidence.
+
+Search exit on the corrected mobile layout: full [CI 37782966182](https://github.com/RochZaremba/financialApp/actions/runs/37782966182) and independent `search-clean-2` passed the changed flow on Chromium/WebKit and four exact viewports. Directly reviewed mobile/desktop screenshots, no remaining clipped selected filter labels or known P0/P1/P2. Rebase onto merged recurring main now triggers another protected complete regression before merge.

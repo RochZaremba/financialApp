@@ -114,3 +114,5 @@ docs/adr/       decyzje architektoniczne
 To aplikacja do domowego budżetu. V1 nie obejmuje PSD2, automatycznego importu bankowego ani księgowości podatkowej.
 
 Stałe płatności obsługują cykle tygodniowe, miesięczne, kwartalne i roczne oraz przypomnienia 0–30 dni przed terminem. Potwierdzenie zapisuje jeden wydatek dla wybranego terminu. W widoku Stałe wydatki można pobrać prywatny kalendarz z alarmami na najbliższy rok; po zmianie harmonogramu należy go ponownie zaimportować. Przypomnienia w aplikacji nie wymagają włączonych powiadomień systemowych.
+
+Historia transakcji umożliwia dokładne filtrowanie po koncie, kategorii, datach i kwotach oraz sortowanie. Tekst przeszukuje też pozycje zapisanych paragonów; filtry obejmują całe kwoty transakcji, a wybrana kategoria wskazuje transakcje zawierające jej przydział.

@@ -4132,3 +4132,20 @@ select:focus-visible {
     flex-direction: column;
   }
 }
+
+.transaction-search {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+}
+.transaction-search .timeline-filters {
+  align-items: end;
+}
+.transaction-search .timeline-filters .field > span {
+  display: block;
+}
+@media (max-width: 600px) {
+  .transaction-search .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

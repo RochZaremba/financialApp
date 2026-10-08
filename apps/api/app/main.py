@@ -2,10 +2,10 @@ import hashlib
 import logging
 import secrets
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from datetime import date as DateValue, datetime, timedelta, timezone
+from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
+from fastapi import Query, Depends, FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import and_, delete, func, or_, select, text
@@ -471,22 +471,76 @@ def transaction_list(
     member: Membership,
     db: Db,
     month: str | None = None,
-    kind: str | None = None,
+    kind: Literal["expense", "income", "pocket", "transfer", "saving"] | None = None,
     search: str = "",
     offset: int = 0,
     limit: int = 30,
+    category_id: str | None = None,
+    account_id: str | None = None,
+    date_from: DateValue | None = None,
+    date_to: DateValue | None = None,
+    min_amount: Annotated[int | None, Query(ge=0, le=100_000_000_000)] = None,
+    max_amount: Annotated[int | None, Query(ge=0, le=100_000_000_000)] = None,
+    sort: Literal["newest", "oldest", "amount_desc", "amount_asc"] = "newest",
 ):
     if offset < 0 or not 1 <= limit <= 100 or len(search) > 160:
         raise HTTPException(422, "Nieprawidłowe filtry.")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "Data od nie może być późniejsza niż data do.")
+    if any(d and not 2000 <= d.year <= 2100 for d in (date_from, date_to)):
+        raise HTTPException(422, "Wybierz daty pomiędzy 2000 a 2100 rokiem.")
+    if min_amount is not None and max_amount is not None and min_amount > max_amount:
+        raise HTTPException(422, "Kwota od nie może przekraczać kwoty do.")
     query = select(Transaction).where(Transaction.household_id == household_id)
     if month:
         start, end = month_dates(month)
         query = query.where(Transaction.date >= start, Transaction.date <= end)
+    if date_from:
+        query = query.where(Transaction.date >= date_from)
+    if date_to:
+        query = query.where(Transaction.date <= date_to)
     if kind:
         query = query.where(Transaction.kind == kind)
-    if search:
-        query = query.where(Transaction.description.ilike("%" + search.replace("%", "\\%").replace("_", "\\_") + "%", escape="\\"))
-    txs = list(db.scalars(query.order_by(Transaction.date.desc(), Transaction.created_at.desc()).offset(offset).limit(limit + 1)))
+    if account_id:
+        scoped(db, Account, household_id, account_id)
+        query = query.where(or_(Transaction.account_id == account_id, Transaction.destination_id == account_id))
+    if category_id:
+        scoped(db, Category, household_id, category_id)
+        matching = (
+            select(TransactionAllocation.id)
+            .where(
+                TransactionAllocation.household_id == household_id,
+                TransactionAllocation.transaction_id == Transaction.id,
+                TransactionAllocation.category_id == category_id,
+            )
+            .exists()
+        )
+        query = query.where(matching)
+    if min_amount is not None:
+        query = query.where(Transaction.amount >= min_amount)
+    if max_amount is not None:
+        query = query.where(Transaction.amount <= max_amount)
+    if search.strip():
+        pattern = "%" + search.strip().replace("%", "\\%").replace("_", "\\_") + "%"
+        receipt_match = (
+            select(ReceiptItem.id)
+            .join(Receipt, Receipt.id == ReceiptItem.receipt_id)
+            .where(
+                Receipt.household_id == household_id,
+                ReceiptItem.household_id == household_id,
+                Receipt.transaction_id == Transaction.id,
+                ReceiptItem.name.ilike(pattern, escape="\\"),
+            )
+            .exists()
+        )
+        query = query.where(or_(Transaction.description.ilike(pattern, escape="\\"), receipt_match))
+    ordering = {
+        "newest": Transaction.date.desc(),
+        "oldest": Transaction.date.asc(),
+        "amount_desc": Transaction.amount.desc(),
+        "amount_asc": Transaction.amount.asc(),
+    }[sort]
+    txs = list(db.scalars(query.order_by(ordering, Transaction.created_at.desc(), Transaction.id).offset(offset).limit(limit + 1)))
     return {"items": [transaction_data(db, t) for t in txs[:limit]], "has_more": len(txs) > limit}
 
 
