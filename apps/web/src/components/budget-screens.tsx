@@ -739,6 +739,12 @@ function BudgetEditor({ close }: { close: () => void }) {
           );
         }}
       />
+      {!!b.carry_in && (
+        <p className="notice">
+          W kopertach jest już {money(b.carry_in)} z poprzedniego miesiąca.
+          Przydzielasz tylko nowy dochód.
+        </p>
+      )}
       <Card className="income-plan">
         <div className="income-heading">
           <div>
@@ -889,6 +895,13 @@ function BudgetEditor({ close }: { close: () => void }) {
                 </div>
                 <MoneyField
                   label={`${a.label} — plan (zł)`}
+                  hint={
+                    b.allocations.find(
+                      (row) => row.reference_id === a.reference_id,
+                    )?.carry_in
+                      ? `Z poprzedniego miesiąca: ${money(b.allocations.find((row) => row.reference_id === a.reference_id)!.carry_in!)} już w kopercie.`
+                      : undefined
+                  }
                   value={values[a.reference_id] || "0,00"}
                   onChange={(e) =>
                     setValues({ ...values, [a.reference_id]: e.target.value })

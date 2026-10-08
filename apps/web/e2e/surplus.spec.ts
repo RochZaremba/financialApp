@@ -93,7 +93,7 @@ test("carry envelope balances into next month without creating income", async ({
   page,
 }, info) => {
   await page.clock.setFixedTime(new Date("2026-10-08T12:00:00+02:00"));
-  const { route, name } = await setup(page, info, "carry");
+  const { route, name, data } = await setup(page, info, "carry");
   await page.goto("/budzet");
   await page.getByRole("button", { name: "Poprzedni miesiąc" }).click();
   await page.getByText("Rozlicz nadwyżkę miesiąca", { exact: true }).click();
@@ -114,9 +114,9 @@ test("carry envelope balances into next month without creating income", async ({
     0,
   );
   await page.goto("/");
+  await page.getByRole("button", { name: "Poprzedni miesiąc" }).click();
   await expect(page.locator("main")).toContainText("Do kolejnego miesiąca:");
   await page.goto("/budzet");
-  await page.getByRole("button", { name: "Następny miesiąc" }).click();
   await expect(page.locator("main")).toContainText("z poprzedniego miesiąca");
   const budget = await page.request
     .get(`${route}/budget/2026-10`)
@@ -124,6 +124,14 @@ test("carry envelope balances into next month without creating income", async ({
   expect(budget.carry_in).toBe(100001);
   expect(budget.income).toBe(0);
   expect(budget.planned_income).toBe(0);
+  await page.getByRole("button", { name: "Edytuj plan" }).click();
+  await expect(page.locator(".budget-editor")).toContainText(
+    "Przydzielasz tylko nowy dochód",
+  );
+  await expect(
+    page.getByLabel(`${data.categories[0].name} — plan (zł)`),
+  ).toHaveValue("0,00");
+  await page.getByRole("button", { name: "Anuluj", exact: true }).click();
   expect(
     (await page.request.get(`${route}/transactions`).then((r) => r.json()))
       .items,
