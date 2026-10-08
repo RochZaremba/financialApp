@@ -38,7 +38,7 @@ test("schedule annual and weekly payments, review reminders and confirm each occ
   await expect(page.locator(".reminder-panel")).toContainText("Ubezpieczenie");
   expect(
     (await page.request.get(`${route}/transactions`).then((r) => r.json()))
-      .total,
+      .items.length,
   ).toBe(0);
   for (const viewport of [
     { width: 390, height: 844 },
@@ -90,7 +90,7 @@ test("schedule annual and weekly payments, review reminders and confirm each occ
   ).toBe(200);
   expect(
     (await page.request.get(`${route}/transactions`).then((r) => r.json()))
-      .total,
+      .items.length,
   ).toBe(1);
   await page.getByRole("button", { name: "Nowy stały wydatek" }).click();
   await page.getByLabel("Nazwa płatności").fill("Zajęcia");
