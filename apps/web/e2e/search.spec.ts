@@ -85,6 +85,7 @@ test("search transactions by product, account, category, dates and exact amounts
           .analyze()
       ).violations,
     ).toEqual([]);
+    await page.getByLabel("Szukaj transakcji", { exact: true }).focus();
     await page.screenshot({
       path: `../../artifacts/ui-review/${process.env.REVIEW_PASS || "search"}/search-${info.project.name}-${viewport.width}.png`,
       fullPage: true,
