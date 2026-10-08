@@ -43,6 +43,7 @@ import {
   Skeleton,
   Submit,
 } from "./ui";
+import { ReminderPanel } from "./reminder-panel";
 import { PageHeading } from "./budget-screens";
 
 export function GoalsScreen() {
@@ -588,10 +589,10 @@ export function AccountsScreen() {
   );
 }
 export function RecurringScreen() {
-  const { data, household, month } = useApp();
+  const { data, household } = useApp();
   const [editing, setEditing] = useState<Recurring | "new" | null>(null);
   const command = useCommand();
-  const rows = data.recurring.filter((r) => r.active);
+  const rows = data.recurring.filter((r) => r.active && r.scheduled);
   const total = rows.reduce((s, r) => s + r.amount, 0);
   const remaining = rows
     .filter((r) => !r.paid)
@@ -599,9 +600,12 @@ export function RecurringScreen() {
   async function pay(row: Recurring) {
     await command.run(
       () =>
-        api(`/households/${household}/recurring/${row.id}/pay/${month}`, {
-          method: "POST",
-        }),
+        api(
+          `/households/${household}/recurring/${row.id}/pay/${row.due_date}`,
+          {
+            method: "POST",
+          },
+        ),
       "Płatność zapisana",
     );
   }
@@ -614,6 +618,9 @@ export function RecurringScreen() {
             name: row.name,
             amount: row.amount,
             day: row.day,
+            frequency: row.frequency,
+            start_date: row.start_date,
+            reminder_days: row.reminder_days,
             category_id: row.category_id,
             account_id: row.account_id,
             active: !row.active,
@@ -634,9 +641,43 @@ export function RecurringScreen() {
           </button>
         }
       />
+      <div className="form-actions">
+        <button
+          type="button"
+          className="button secondary"
+          disabled={command.busy || !data.recurring.some((r) => r.active)}
+          onClick={() =>
+            command.run(async () => {
+              const response = await fetch(
+                `/api/households/${household}/recurring/calendar`,
+                { credentials: "same-origin" },
+              );
+              if (!response.ok)
+                throw new Error(
+                  "Nie udało się pobrać kalendarza. Spróbuj ponownie.",
+                );
+              const url = URL.createObjectURL(await response.blob());
+              const link = document.createElement("a");
+              link.href = url;
+              link.download = "razem-platnosci.ics";
+              link.click();
+              setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }, "Kalendarz pobrany")
+          }
+        >
+          {" "}
+          <Download size={17} />
+          Przypomnij w kalendarzu
+        </button>
+      </div>
+      <p className="muted small">
+        Zaimportuj pobrany plik do kalendarza telefonu. Zawiera terminy i alarmy
+        na najbliższy rok; po zmianie harmonogramu pobierz go ponownie.
+      </p>
+      <ReminderPanel />
       <div className="budget-summary two">
         <Card>
-          <span className="eyebrow">STAŁE WYDATKI MIESIĘCZNIE</span>
+          <span className="eyebrow">PŁATNOŚCI W TYM MIESIĄCU</span>
           <strong>{money(total)}</strong>
         </Card>
         <Card>
@@ -657,11 +698,11 @@ export function RecurringScreen() {
         {data.recurring.length ? (
           data.recurring
             .slice()
-            .sort((a, b) => a.day - b.day)
+            .sort((a, b) => a.due_date.localeCompare(b.due_date))
             .map((row) => (
               <div
                 className={`recurring-row ${row.active ? "" : "inactive"}`}
-                key={row.id}
+                key={`${row.id}:${row.due_date}`}
               >
                 <span className="date-tile">
                   <small>{dateLabel(row.due_date).split(" ")[1]}</small>
@@ -675,11 +716,22 @@ export function RecurringScreen() {
                         ?.name
                     }{" "}
                     · {data.accounts.find((a) => a.id === row.account_id)?.name}
+                    ·{" "}
+                    {
+                      {
+                        weekly: "Co tydzień",
+                        monthly: "Co miesiąc",
+                        quarterly: "Co kwartał",
+                        yearly: "Co rok",
+                      }[row.frequency]
+                    }
                   </small>
                 </div>
                 <Amount value={row.amount} />
                 <div className="recurring-actions">
-                  {row.paid ? (
+                  {!row.scheduled && row.active ? (
+                    <span className="pill neutral">Nie w tym miesiącu</span>
+                  ) : row.paid ? (
                     <span className="pill positive">
                       <Check size={14} />
                       Opłacone
@@ -718,23 +770,24 @@ export function RecurringScreen() {
           <Empty
             icon="account"
             title="Stałe płatności w jednym miejscu"
-            description="Dodaj czynsz, internet lub inne miesięczne opłaty przyciskiem powyżej."
+            description="Dodaj czynsz, internet, ubezpieczenie lub inne powtarzalne opłaty."
           />
         )}
       </Card>
       <div className="quiet-tip">
         <ShieldCheck size={18} />
         <p>
-          Jedna płatność na miesiąc. Ponowne kliknięcie nie utworzy kolejnego
-          wydatku. Gdy miesiąc jest krótszy, płatność wypada w jego ostatnim
-          dniu.
+          Każdy termin potwierdzasz raz. Ponowne kliknięcie nie utworzy
+          kolejnego wydatku. Gdy miesiąc jest krótszy, płatność wypada w jego
+          ostatnim dniu.
         </p>
       </div>
     </>
   );
 }
 function RecurringForm({ row, close }: { row?: Recurring; close: () => void }) {
-  const { household, data } = useApp();
+  const { household, data, month } = useApp();
+  const [frequency, setFrequency] = useState(row?.frequency || "monthly");
   const command = useCommand();
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -748,7 +801,13 @@ function RecurringForm({ row, close }: { row?: Recurring; close: () => void }) {
             {
               name: f.get("name"),
               amount: parseMoney(String(f.get("amount"))),
-              day: Number(f.get("day")),
+              day:
+                frequency === "monthly"
+                  ? Number(f.get("day"))
+                  : Number(String(f.get("start_date")).slice(8, 10)),
+              frequency,
+              start_date: f.get("start_date") || null,
+              reminder_days: Number(f.get("reminder_days")),
               category_id: f.get("category"),
               account_id: f.get("account"),
               active: row?.active ?? true,
@@ -763,7 +822,7 @@ function RecurringForm({ row, close }: { row?: Recurring; close: () => void }) {
   return (
     <Card className="form-card">
       <div className="section-title">
-        <h2>{row ? "Edytuj stały wydatek" : "Co miesiąc do opłacenia"}</h2>
+        <h2>{row ? "Edytuj stały wydatek" : "Powtarzalna płatność"}</h2>
         <button
           className="icon-button"
           aria-label="Zamknij formularz"
@@ -788,13 +847,43 @@ function RecurringForm({ row, close }: { row?: Recurring; close: () => void }) {
             defaultValue={row ? moneyInput(row.amount) : ""}
             required
           />
+          {frequency === "monthly" && (
+            <Field
+              name="day"
+              label="Dzień miesiąca"
+              type="number"
+              min={1}
+              max={31}
+              defaultValue={row?.day || 1}
+              required
+            />
+          )}
+          <Select
+            label="Jak często?"
+            value={frequency}
+            onChange={(e) => setFrequency(e.target.value as typeof frequency)}
+          >
+            <option value="weekly">Co tydzień</option>
+            <option value="monthly">Co miesiąc</option>
+            <option value="quarterly">Co kwartał</option>
+            <option value="yearly">Co rok</option>
+          </Select>
           <Field
-            name="day"
-            label="Dzień miesiąca"
+            name="start_date"
+            label="Pierwsza płatność / od kiedy"
+            type="date"
+            min="2000-01-01"
+            max="2100-12-31"
+            defaultValue={row?.start_date || (row ? "" : `${month}-01`)}
+            required={frequency !== "monthly"}
+          />
+          <Field
+            name="reminder_days"
+            label="Przypomnij wcześniej (dni)"
             type="number"
-            min={1}
-            max={31}
-            defaultValue={row?.day || 1}
+            min={0}
+            max={30}
+            defaultValue={row?.reminder_days ?? 3}
             required
           />
           <Select

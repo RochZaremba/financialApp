@@ -59,6 +59,7 @@ from .models import (
     TransactionAllocation,
     User,
 )
+from .schedules import occurrence_dates, calendar_text, reminders
 from .receipts import MAX_IMAGE_BYTES, provider, storage_path, validated_image
 from .schemas import (
     AccountInput,
@@ -270,6 +271,7 @@ def overview(household_id: str, month: str, member: Membership, db: Db):
         tasks=tasks,
         recent=[transaction_data(db, t) for t in transactions],
         recurring=recurring_data(db, household_id, month),
+        reminders=reminders(db, household_id, today()),
         rules=[serialize(r) for r in records(db, ClassificationRule, household_id)],
     )
 
@@ -628,28 +630,65 @@ def recurring_update(household_id: str, recurring_id: str, data: RecurringInput,
     return serialize(row)
 
 
-@app.post("/households/{household_id}/recurring/{recurring_id}/pay/{month}")
-def recurring_pay(household_id: str, recurring_id: str, month: str, member: Membership, db: Db):
+@app.post("/households/{household_id}/recurring/{recurring_id}/pay/{occurrence}")
+def recurring_pay(household_id: str, recurring_id: str, occurrence: str, member: Membership, db: Db):
     row = scoped(db, Recurring, household_id, recurring_id)
     if not row.active:
         raise HTTPException(422, "Ten cykliczny wydatek jest wyłączony.")
-    start, end = month_dates(month)
+    if len(occurrence) == 7:
+        start, end = month_dates(occurrence)
+        dates = occurrence_dates(row, start, end)
+        if len(dates) != 1:
+            raise HTTPException(422, "Wybierz konkretną płatność z tego miesiąca.")
+        due = dates[0]
+    else:
+        try:
+            due = datetime.strptime(occurrence, "%Y-%m-%d").date()
+        except ValueError as error:
+            raise HTTPException(422, "Nieprawidłowa data płatności.") from error
+        month_valid(due.strftime("%Y-%m"))
+        if occurrence_dates(row, due, due) != [due]:
+            raise HTTPException(422, "Ta data nie należy do harmonogramu płatności.")
+        start, end = month_dates(due.strftime("%Y-%m"))
+    key = f"recurring:{row.id}:{due.isoformat()}"
+    keys = [key]
+    if row.frequency == "monthly":
+        keys.append(f"recurring:{row.id}:{due:%Y-%m}")
+    db.scalar(select(Household).where(Household.id == household_id).with_for_update())
+    existing = db.scalar(
+        select(Transaction).where(
+            Transaction.household_id == household_id,
+            Transaction.source == "recurring",
+            Transaction.source_id == row.id,
+            or_(Transaction.idempotency_key.in_(keys), Transaction.date == due),
+        )
+    )
+    if existing:
+        return transaction_data(db, existing)
     data = TransactionInput(
         kind="expense",
         amount=row.amount,
-        date=start.replace(day=min(row.day, end.day)),
+        date=due,
         description=row.name,
         account_id=row.account_id,
         allocations=[SplitInput(category_id=row.category_id, amount=row.amount)],
     )
-    existing = db.scalar(
-        select(Transaction).where(Transaction.household_id == household_id, Transaction.idempotency_key == f"recurring:{row.id}:{month}")
-    )
-    if existing:
-        return transaction_data(db, existing)
-    tx = create_transaction(db, member, data, f"recurring:{row.id}:{month}", source="recurring", source_id=row.id)
+    tx = create_transaction(db, member, data, key, source="recurring", source_id=row.id)
     db.commit()
     return transaction_data(db, tx)
+
+
+@app.get("/households/{household_id}/reminders")
+def reminder_list(household_id: str, member: Membership, db: Db):
+    return reminders(db, household_id, today())
+
+
+@app.get("/households/{household_id}/recurring/calendar")
+def recurring_calendar(household_id: str, member: Membership, db: Db):
+    content = calendar_text(records(db, Recurring, household_id), today())
+    return Response(
+        content, media_type="text/calendar; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="razem-platnosci.ics"'}
+    )
 
 
 def receipt_data(db, receipt):
@@ -956,7 +995,7 @@ def analytics(household_id: str, month: str, member: Membership, db: Db):
     current = today()
     elapsed = current.day if start <= current <= end else end.day if current > end else 0
     recurring = recurring_data(db, household_id, month)
-    outstanding = sum(r["amount"] for r in recurring if r["active"] and not r["paid"])
+    outstanding = sum(r["amount"] for r in recurring if r["active"] and r["scheduled"] and not r["paid"])
     recurring_actual = sum(
         db.scalars(
             select(Transaction.amount).where(

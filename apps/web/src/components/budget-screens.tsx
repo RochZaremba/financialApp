@@ -117,9 +117,11 @@ export function Home() {
   const review = data.tasks.length;
   const categories = b.allocations.filter((a) => a.kind === "category");
   const pocket = b.allocations.filter((a) => a.kind === "pocket");
-  const next = data.recurring
-    .filter((r) => r.active && !r.paid)
-    .sort((a, b) => a.day - b.day)[0];
+  const next =
+    data.reminders[0] ||
+    data.recurring
+      .filter((r) => r.active && r.scheduled && !r.paid)
+      .sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
   return (
     <>
       <PageHeading
@@ -368,7 +370,11 @@ export function Home() {
             <div className="quiet-insight">
               <Repeat2 size={19} />
               <div>
-                <strong>Najbliższy stały wydatek</strong>
+                <strong>
+                  {next.reminder_status === "overdue"
+                    ? "Płatność czeka na potwierdzenie"
+                    : "Najbliższy stały wydatek"}
+                </strong>
                 <p>
                   {next.name} · {dateLabel(next.due_date)}
                   <br />

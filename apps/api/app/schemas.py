@@ -113,10 +113,23 @@ class AccountInput(Schema):
 class RecurringInput(Schema):
     name: Annotated[str, Field(min_length=1, max_length=120)]
     amount: PositiveMoney
-    day: Annotated[int, Field(strict=True, ge=1, le=31)]
+    day: Annotated[int, Field(strict=True, ge=1, le=31)] = 1
+    frequency: Literal["weekly", "monthly", "quarterly", "yearly"] = "monthly"
+    start_date: DateValue | None = None
+    reminder_days: Annotated[int, Field(strict=True, ge=0, le=30)] = 3
     category_id: str
     account_id: str
     active: bool = True
+
+    @model_validator(mode="after")
+    def schedule_valid(self):
+        if self.frequency != "monthly" and self.start_date is None:
+            raise ValueError("Wybierz datę pierwszej płatności.")
+        if self.start_date and not 2000 <= self.start_date.year <= 2100:
+            raise ValueError("Wybierz datę pomiędzy 2000 a 2100 rokiem.")
+        if self.start_date and self.frequency != "monthly":
+            self.day = self.start_date.day
+        return self
 
 
 class DraftItemInput(Schema):

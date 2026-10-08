@@ -104,6 +104,11 @@ export type Task = {
   resolved: boolean;
 };
 export type Recurring = {
+  frequency: "weekly" | "monthly" | "quarterly" | "yearly";
+  start_date: string | null;
+  reminder_days: number;
+  scheduled: boolean;
+  reminder_status: "overdue" | "upcoming" | "later" | null;
   id: string;
   name: string;
   amount: number;
@@ -135,6 +140,7 @@ export type Overview = {
   tasks: Task[];
   recent: Transaction[];
   recurring: Recurring[];
+  reminders: Recurring[];
   rules: Rule[];
 };
 export type ReceiptItem = {
