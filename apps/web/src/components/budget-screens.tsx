@@ -50,6 +50,8 @@ import { ManualTransaction, type MovementKind } from "./movement-form";
 import { MonthCopy } from "./month-copy";
 import { Surplus } from "./surplus";
 
+import { BudgetProposal } from "./budget-proposal";
+
 function pendingText(count: number) {
   if (count === 1) return "1 sprawa czeka";
   const few =
@@ -610,6 +612,7 @@ function BudgetEditor({ close }: { close: () => void }) {
   const command = useCommand();
   const b = data.budget;
   const [copyOpen, setCopyOpen] = useState(false);
+  const [proposalOpen, setProposalOpen] = useState(false);
   const [revision] = useState(b.period?.updated_at || null);
   const base: {
     kind: Allocation["kind"];
@@ -745,6 +748,30 @@ function BudgetEditor({ close }: { close: () => void }) {
           Przydzielasz tylko nowy dochód.
         </p>
       )}
+
+      <BudgetProposal
+        onOpen={setProposalOpen}
+        draft={() => ({
+          income_sources: sources.map((s) => ({
+            name: s.name.trim(),
+            member_id: s.member_id || null,
+            amount: parseMoney(s.amount),
+          })),
+          allocations: base.map((a) => ({
+            kind: a.kind,
+            reference_id: a.reference_id,
+            amount: parseMoney(values[a.reference_id] || "0"),
+          })),
+        })}
+        apply={(rows) =>
+          setValues((current) => ({
+            ...current,
+            ...Object.fromEntries(
+              rows.map((row) => [row.category_id, moneyInput(row.amount)]),
+            ),
+          }))
+        }
+      />
       <Card className="income-plan">
         <div className="income-heading">
           <div>
@@ -912,7 +939,7 @@ function BudgetEditor({ close }: { close: () => void }) {
             ))}
         </Card>
       ))}
-      {!copyOpen && (
+      {!copyOpen && !proposalOpen && (
         <div className="form-actions sticky-actions">
           <ErrorMessage error={command.error} />
           <span>

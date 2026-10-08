@@ -135,3 +135,44 @@ test("copy a monthly plan into a reviewed draft without duplicating transactions
   );
   await page.request.delete(route, { data: { name } });
 });
+
+test("review a complete budget proposal and apply it only to the draft", async ({
+  page,
+}, info) => {
+  const { route, data, name } = await household(page, info);
+  await page.goto("/budzet");
+  await page.getByLabel("Kwota źródła 1 (zł)", { exact: true }).fill("1000,01");
+  await page
+    .getByLabel(`${data.members[0].name} — plan (zł)`)
+    .fill("200");
+  await page.getByText("Pomóż mi rozdzielić budżet", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Na podstawie historii", exact: true })
+    .click();
+  await expect(page.locator(".budget-proposal")).toContainText("800,01");
+  await expect(page.locator(".proposal-row")).toHaveCount(
+    data.categories.length,
+  );
+  expect(
+    (await page.request.get(`${route}/budget/2026-10`).then((r) => r.json()))
+      .period,
+  ).toBeNull();
+  await review(page, "budget-proposal", info);
+  await page
+    .getByRole("button", { name: "Zastosuj propozycję do szkicu" })
+    .click();
+  await expect(
+    page.getByLabel(`${data.members[0].name} — plan (zł)`),
+  ).toHaveValue("200");
+  await page.getByRole("button", { name: "Zapisz plan miesiąca" }).click();
+  const saved = await page.request
+    .get(`${route}/budget/2026-10`)
+    .then((r) => r.json());
+  expect(saved.unassigned).toBe(0);
+  expect(saved.planned_income).toBe(100001);
+  expect(
+    (await page.request.get(`${route}/transactions`).then((r) => r.json()))
+      .total,
+  ).toBe(0);
+  await page.request.delete(route, { data: { name } });
+});

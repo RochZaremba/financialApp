@@ -328,3 +328,10 @@ Wstępna pełna regresja API: 96 testów przechodzi. Dodane testy obejmują zach
 Surplus review found P2: narrow account/goal choices clipped labels, and Safari's native date input overflowed the two-column mobile form. `surplus-clean-1` ended with five passes and the Safari overflow failure; it is not clean. Changed mobile surplus fields to one column, constrained native input widths and wrap long labels. Added explicit outgoing carry on Home and carry-aware zero-budget/forecast/trend feedback. The final source must complete two clean loops.
 
 The following surplus loop reached the repaired desktop distribution UI but exposed an E2E assumption: full `page.goto` reload resets the app's selected month. Fixed the test to explicitly select September on Home and use the current October when returning to Budget. This failed/stopped run is excluded. Added carry labels to the target editor so users allocate only new income rather than counting carry twice.
+
+
+## 2026-10-08 — pomoc w planowaniu budżetu
+
+Kryteria: propozycja dla wszystkich aktywnych kategorii, suma dokładnie równa dochodowi po zarezerwowaniu kieszonkowego/celów; podgląd i osobne zastosowanie do szkicu; brak automatycznego zapisu; brak surowych paragonów w zapytaniu AI; uczciwe założenia i niedostępność.
+
+Wstępne osiem testów API przechodzi: ścisły kontrakt OpenAI/Gemini, dokładny podział z zaokrągleniami, historia i płatności, autoryzacja, brak zapisów, błędny total/obca kategoria/duplikat. Lint i typecheck przeszły. E2E sprawdza podgląd, niezmienione kieszonkowe, zastosowanie/zapis, cztery viewporty oraz axe. Pełne pętle wymagane przed scaleniem.

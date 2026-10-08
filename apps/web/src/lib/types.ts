@@ -10,6 +10,7 @@ export type Me = {
   households: Household[];
   receipt_provider: string;
   receipt_ai_available: boolean;
+  budget_ai_available: boolean;
   thresholds: { auto: number; review: number };
 };
 export type Category = {

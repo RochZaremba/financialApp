@@ -43,6 +43,8 @@ from .settlements import (
     ensure_open,
     policy as surplus_policy,
 )
+
+from .planning import ProposalRequest, proposal, provider_name
 from .exchange import value_accounts
 from .middleware import RequestBodyLimit
 from .models import (
@@ -183,6 +185,7 @@ def me(user: Person, db: Db):
         "households": households,
         "receipt_provider": settings.receipt_provider,
         "receipt_ai_available": settings.receipt_ai_available,
+        "budget_ai_available": provider_name() is not None,
         "thresholds": {
             "auto": round(settings.classification_auto_threshold * 100),
             "review": round(settings.classification_review_threshold * 100),
@@ -1212,3 +1215,10 @@ def budget_settle(household_id: str, month: str, data: SettlementConfirm, member
     result = settlement_confirm(db, member, month, data)
     db.commit()
     return result
+
+
+@app.post("/households/{household_id}/budget/{month}/proposal")
+def budget_proposal(household_id: str, month: str, data: ProposalRequest, member: Membership, db: Db):
+    month_valid(month)
+    rate_limit("budget-proposal:" + household_id + ":" + member.user_id, 5)
+    return proposal(db, household_id, month, data)
