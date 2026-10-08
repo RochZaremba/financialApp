@@ -41,6 +41,7 @@ from .settlements import (
     preview as settlement_preview,
     confirm as settlement_confirm,
     ensure_open,
+    ensure_schedule_payable,
     policy as surplus_policy,
 )
 
@@ -684,6 +685,7 @@ def recurring_create(household_id: str, data: RecurringInput, key: Key, member: 
         raise HTTPException(422, "Wybierz aktywną kategorię.")
     pln_account(db, household_id, data.account_id)
     row = create_record(db, member, Recurring, data.model_dump(), key)
+    ensure_schedule_payable(db, household_id, row)
     db.add(row)
     db.commit()
     return serialize(row)
@@ -691,6 +693,7 @@ def recurring_create(household_id: str, data: RecurringInput, key: Key, member: 
 
 @app.put("/households/{household_id}/recurring/{recurring_id}")
 def recurring_update(household_id: str, recurring_id: str, data: RecurringInput, member: Membership, db: Db):
+    db.scalar(select(Household).where(Household.id == household_id).with_for_update())
     row = scoped(db, Recurring, household_id, recurring_id)
     category = scoped(db, Category, household_id, data.category_id)
     if category.archived and data.active:
@@ -699,6 +702,7 @@ def recurring_update(household_id: str, recurring_id: str, data: RecurringInput,
     for key, value in data.model_dump().items():
         setattr(row, key, value)
     row.updated_by = member.user_id
+    ensure_schedule_payable(db, household_id, row)
     db.commit()
     return serialize(row)
 

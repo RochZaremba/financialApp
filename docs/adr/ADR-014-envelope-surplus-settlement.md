@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Decision
 
-A completed planned month can be settled once, after all expenses have categories and pocket-money/goal commitments have been paid or the plan has been corrected. Users select positive active-category envelope amounts. Their sum must fit both net plan money and actual recorded income plus incoming carry after all shared spending, pocket transfers and savings. Positive envelopes cannot bypass overspending elsewhere.
+A completed planned month can be settled once, after all expenses have categories and scheduled source-month payments and pocket-money/goal commitments have been paid or the plan has been corrected. Users select positive active-category envelope amounts. Their sum must fit both net plan money and actual recorded income plus incoming carry after all shared spending, pocket transfers and savings. Positive envelopes cannot bypass overspending elsewhere.
 
 Carry creates a separate earmarked ledger into the immediately following month. It changes neither bank balances nor income sources nor actual income; edits of the target month's new plan cannot erase incoming funds. Distribution uses user percentages in integer basis points, exact largest-remainder grosze, a sufficiently funded PLN source and other PLN savings accounts with optional household goals. The user explicitly confirms performed transfers and their date in the following month. Recorded transfers affect account/goal balances while reserving source-month surplus; they do not consume next month's new income twice.
 
@@ -13,3 +13,5 @@ The server locks the household, validates every reference and requires a fingerp
 ## Consequences
 
 Settlement explicitly closes the source month. This is stated before confirmation; ordinary ongoing-month planning and entry remain unaffected. The UI requests a final review because historical correction after closing is not currently supported. Surplus is based on recorded actual income; opening account balances alone are not treated as earned monthly income. Partial selected amounts may leave unselected money in the closed source. Schema downgrade refuses to discard settlements or saved ratios. The app records transfers, never instructs a bank to perform them.
+
+Active schedules cannot introduce unpaid occurrences into an already closed month. Creation/update and settlement serialize on the household; paid-occurrence retries remain valid after settlement. Legacy unanchored reminders never begin before their creation month.

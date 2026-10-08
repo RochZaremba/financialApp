@@ -90,6 +90,19 @@ def period_rows(db, household_id, rows, start, end, now):
     return result
 
 
+def unpaid_period(db, household_id, rows, month):
+    """Unpaid expectations in one month, without the reminder UI's backlog limit."""
+    from .domain import month_dates, today
+
+    start, end = month_dates(month)
+    earliest = {r.id: r.start_date or r.created_at.astimezone(WARSAW).date().replace(day=1) for r in rows}
+    return [
+        r
+        for r in period_rows(db, household_id, rows, start, end, today())
+        if r["active"] and r["scheduled"] and not r["paid"] and r["due_date"] >= earliest[r["id"]]
+    ]
+
+
 def reminders(db, household_id, now):
     rows = list(db.scalars(select(Recurring).where(Recurring.household_id == household_id, Recurring.active.is_(True))))
     result = []

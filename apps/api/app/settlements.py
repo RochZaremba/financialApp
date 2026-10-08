@@ -7,8 +7,9 @@ from fastapi import HTTPException
 from pydantic import Field, model_validator
 from sqlalchemy import select
 
-from .domain import account_data, audit, budget_data, create_transaction, fingerprint, month_valid, pln_account, scoped, today
-from .models import BudgetSettlement, Category, Goal, Household, Period, SurplusPolicy
+from .domain import account_data, audit, budget_data, create_transaction, fingerprint, month_valid, pln_account, records, scoped, today
+from .models import BudgetSettlement, Category, Goal, Household, Period, Recurring, SurplusPolicy
+from .schedules import unpaid_period
 from .schemas import Money, Schema, TransactionInput
 
 
@@ -54,6 +55,14 @@ def ensure_open(db, household_id, month):
         raise HTTPException(409, "Ten miesiąc został rozliczony. Jego plan i transakcje są zamknięte.")
 
 
+def ensure_schedule_payable(db, household_id, row):
+    if not row.active:
+        return
+    closed_months = db.scalars(select(BudgetSettlement.source_month).where(BudgetSettlement.household_id == household_id))
+    if any(unpaid_period(db, household_id, [row], month) for month in closed_months):
+        raise HTTPException(422, "Harmonogram dodaje nieopłacone płatności do rozliczonego miesiąca. Wybierz późniejszą datę rozpoczęcia.")
+
+
 def next_month(month):
     month_valid(month)
     index = int(month[:4]) * 12 + int(month[5:])
@@ -80,6 +89,8 @@ def preview(db, household_id, month, data):
         raise HTTPException(422, "Najpierw przypisz kategorie wszystkim wydatkom miesiąca.")
     if any(a["kind"] in ("pocket", "goal") and a["remaining"] > 0 for a in budget["allocations"]):
         raise HTTPException(422, "Najpierw potwierdź zaplanowane kieszonkowe i wpłaty na cele albo popraw plan miesiąca.")
+    if unpaid_period(db, household_id, records(db, Recurring, household_id), month):
+        raise HTTPException(422, "Najpierw potwierdź zaległe płatności cykliczne z tego miesiąca albo popraw harmonogram.")
     available = max(0, min(budget["remaining"], budget["income"] + budget["carry_in"] - budget["spent"]))
     amounts = {a["reference_id"]: a for a in budget["allocations"] if a["kind"] == "category"}
     envelopes = []
