@@ -156,24 +156,36 @@ test("review a complete budget proposal and apply it only to the draft", async (
   await page.getByLabel("Kwota źródła 1 (zł)", { exact: true }).fill("1000,01");
   await page.getByLabel(`${data.members[0].name} — plan (zł)`).fill("200");
   await page.getByText("Pomóż mi rozdzielić budżet", { exact: true }).click();
+  let allowFailure: () => void = () => {};
+  const pendingFailure = new Promise<void>((resolve) => {
+    allowFailure = resolve;
+  });
   await page.route(
     "**/budget/*/proposal",
-    (route) =>
-      route.fulfill({
+    async (route) => {
+      await pendingFailure;
+      await route.fulfill({
         status: 502,
         contentType: "application/json",
         body: JSON.stringify({
           detail: "Nie udało się przygotować propozycji. Spróbuj ponownie.",
         }),
-      }),
+      });
+    },
     { times: 1 },
   );
   await page
     .getByRole("button", { name: "Na podstawie historii", exact: true })
     .click();
+  await expect(page.getByLabel("Co uwzględnić w propozycji?")).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText(
+    "Przygotowuję propozycję",
+  );
+  allowFailure();
   await expect(page.locator("main").getByRole("alert")).toContainText(
     "Spróbuj ponownie.",
   );
+  await expect(page.getByLabel("Co uwzględnić w propozycji?")).toBeEnabled();
   await review(page, "budget-proposal-error", info);
   await page
     .getByRole("button", { name: "Na podstawie historii", exact: true })

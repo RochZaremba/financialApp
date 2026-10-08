@@ -98,6 +98,7 @@ export function BudgetProposal({
           placeholder="Np. mniej jedzenia na mieście, większa pula na dom"
           value={preferences}
           maxLength={1000}
+          disabled={busy}
           onChange={(e) => {
             setPreferences(e.target.value);
             setResult(null);
