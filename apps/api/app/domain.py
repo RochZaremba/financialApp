@@ -111,17 +111,7 @@ def pln_account(db, household_id, account_id):
     return account
 
 
-def create_transaction(db: Session, member: Member, data: TransactionInput, key: str, source="manual", source_id=None):
-    # Serializes duplicate submissions and budget-affecting writes within one household.
-    from .models import Household
-
-    db.scalar(select(Household).where(Household.id == member.household_id).with_for_update())
-    fingerprint = hashlib.sha256(json.dumps(data.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
-    existing = db.scalar(select(Transaction).where(Transaction.household_id == member.household_id, Transaction.idempotency_key == key))
-    if existing:
-        if existing.request_hash != fingerprint:
-            raise HTTPException(409, "Ten zapis już istnieje z innymi danymi. Odśwież formularz.")
-        return existing
+def validate_transaction(db, member, data, *, existing=None):
     pln_account(db, member.household_id, data.account_id)
     if data.date.year < 2000 or data.date.year > 2100:
         raise HTTPException(422, "Wybierz datę pomiędzy 2000 a 2100 rokiem.")
@@ -152,10 +142,28 @@ def create_transaction(db: Session, member: Member, data: TransactionInput, key:
             raise HTTPException(422, "Każda kategoria może wystąpić tylko raz.")
         for allocation in data.allocations:
             category = scoped(db, Category, member.household_id, allocation.category_id)
-            if category.archived:
+            if category.archived and (existing is None or entry_changed(existing, allocation)):
                 raise HTTPException(422, "Ta kategoria została zarchiwizowana.")
     elif data.allocations:
         raise HTTPException(422, "Tylko wspólne wydatki wymagają kategorii.")
+
+
+def entry_changed(existing, allocation):
+    return not any(a.category_id == allocation.category_id for a in existing)
+
+
+def create_transaction(db: Session, member: Member, data: TransactionInput, key: str, source="manual", source_id=None):
+    # Serializes duplicate submissions and budget-affecting writes within one household.
+    from .models import Household
+
+    db.scalar(select(Household).where(Household.id == member.household_id).with_for_update())
+    fingerprint = hashlib.sha256(json.dumps(data.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
+    existing = db.scalar(select(Transaction).where(Transaction.household_id == member.household_id, Transaction.idempotency_key == key))
+    if existing:
+        if existing.request_hash != fingerprint:
+            raise HTTPException(409, "Ten zapis już istnieje z innymi danymi. Odśwież formularz.")
+        return existing
+    validate_transaction(db, member, data)
     payload = data.model_dump(exclude={"allocations"})
     transaction = Transaction(
         **payload,

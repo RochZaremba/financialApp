@@ -80,6 +80,7 @@ export type Budget = {
 };
 export type Split = { category_id: string; amount: number };
 export type Transaction = {
+  updated_at: string;
   id: string;
   kind: string;
   amount: number;

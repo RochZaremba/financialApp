@@ -33,6 +33,7 @@ from .domain import (
     serialize,
     today,
     transaction_data,
+    validate_transaction,
 )
 from .exchange import value_accounts
 from .middleware import RequestBodyLimit
@@ -72,6 +73,7 @@ from .schemas import (
     RecurringInput,
     SplitInput,
     TransactionInput,
+    TransactionEditInput,
 )
 from .security import DUMMY_HASH, current_user, digest, hasher, household_member, rate_limit, set_session
 
@@ -432,6 +434,63 @@ def transaction_list(
 @app.get("/households/{household_id}/transactions/{transaction_id}")
 def transaction_get(household_id: str, transaction_id: str, member: Membership, db: Db):
     return transaction_data(db, scoped(db, Transaction, household_id, transaction_id))
+
+
+@app.put("/households/{household_id}/transactions/{transaction_id}")
+def transaction_edit(household_id: str, transaction_id: str, data: TransactionEditInput, key: Key, member: Membership, db: Db):
+    db.scalar(select(Household).where(Household.id == household_id).with_for_update())
+    tx = scoped(db, Transaction, household_id, transaction_id, lock=True)
+    signature = fingerprint("transaction.edit:" + transaction_id, data.model_dump(mode="json"))
+    previous = db.scalar(select(Mutation).where(Mutation.household_id == household_id, Mutation.key == key))
+    if previous:
+        if previous.request_hash != signature:
+            raise HTTPException(409, "Ten zapis już istnieje z innymi danymi. Odśwież formularz.")
+        return transaction_data(db, tx)
+    if data.expected_updated_at != tx.updated_at:
+        raise HTTPException(409, "Ta transakcja została zmieniona. Odśwież ją przed ponowną edycją.")
+    if data.kind != tx.kind:
+        raise HTTPException(422, "Nie można zmienić rodzaju zapisanej transakcji.")
+    movement = TransactionInput.model_validate(data.model_dump(exclude={"expected_updated_at"}))
+    old_allocations = list(db.scalars(select(TransactionAllocation).where(TransactionAllocation.transaction_id == tx.id)))
+    if tx.source == "receipt":
+        old_splits = sorted((a.category_id, a.amount) for a in old_allocations)
+        new_splits = sorted((a.category_id, a.amount) for a in movement.allocations)
+        if movement.amount != tx.amount or movement.date != tx.date or old_splits != new_splits:
+            raise HTTPException(422, "Kwota, data i pozycje pochodzą z zatwierdzonego paragonu. Możesz zmienić opis lub konto.")
+    validate_transaction(db, member, movement, existing=old_allocations)
+    for name, value in movement.model_dump(exclude={"allocations"}).items():
+        setattr(tx, name, value)
+    db.execute(delete(TransactionAllocation).where(TransactionAllocation.transaction_id == tx.id))
+    for entry in movement.allocations:
+        db.add(
+            TransactionAllocation(
+                **entry.model_dump(), transaction_id=tx.id, household_id=household_id, created_by=member.user_id, updated_by=member.user_id
+            )
+        )
+    tx.status = "unallocated" if tx.kind == "expense" and not movement.allocations else "categorized"
+    tx.updated_by = member.user_id
+    tx.updated_at = datetime.now(timezone.utc)
+    tasks = list(db.scalars(select(ReviewTask).where(ReviewTask.household_id == household_id, ReviewTask.transaction_id == tx.id)))
+    for task in tasks:
+        task.resolved = True
+        task.updated_by = member.user_id
+    if tx.status == "unallocated":
+        db.add(
+            ReviewTask(household_id=household_id, transaction_id=tx.id, kind="unallocated", title=tx.description, created_by=member.user_id)
+        )
+    db.add(
+        Mutation(
+            household_id=household_id,
+            key=key,
+            resource="transaction.edit",
+            request_hash=signature,
+            entity_id=tx.id,
+            created_by=member.user_id,
+        )
+    )
+    audit(db, member, "transaction.updated", tx.id)
+    db.commit()
+    return transaction_data(db, tx)
 
 
 @app.put("/households/{household_id}/transactions/{transaction_id}/allocations")

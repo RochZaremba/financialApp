@@ -135,3 +135,32 @@ Acceptance: PLN default preserves existing accounts; support EUR/USD/GBP/CHF in 
 Status: implementation in progress.
 
 Implementation/verification (account currency feedback): added currency selection, native balances, server-calculated PLN valuations and totals with NBP rate/date, automatic refresh and honest unavailable/cached states. Added migration 006 and currency-preserving export metadata. Kept PLN transactions safe through filtered choices and server validation. Full gate passed (7 frontend, 77 API, 20 deployment, 14 desktop/mobile E2E tests). Fixed a mobile rate-paragraph layout defect found by direct screenshot review; two subsequent clean four-viewport loops and 52 unmocked screen checks passed. Evidence: `artifacts/currency-final-check.log`, `artifacts/currency-clean-loops.log`, `artifacts/ui-review/currency/`, `artifacts/ui-review/currency-final/`, and LOOP_LOG. Status: verified locally; production delivery follows the existing merge-only workflow.
+# 2026-10-08 — Rozszerzenia codziennego planowania
+
+Feedback: dodać edycję transakcji, kopiowanie planu miesiąca, przenoszenie sald kopert albo procentowy podział nadwyżek na konta/oszczędności/cele, przypomnienia i różne cykle płatności, dokładniejsze wyszukiwanie oraz propozycję przydziałów budżetu z AI. Pracować na osobnych branchach i scalać przez PR-y.
+
+Interpretation: six independently reviewable feature branches/PRs. Financial writes remain household-authorized, exact and idempotent. Copying or carrying a plan does not invent income or move account money. Surplus transfers require an explicit preview, exact percentages and confirmed account movement; the same leftover cannot be used twice. AI proposes editable allocations across active categories, with pocket/goal commitments preserved; it never saves automatically. Recurring expectations support non-monthly cycles and reminders without booking unpaid expenses.
+
+Affected: Transactions, Budget, Home, Accounts/Goals, recurring expenses, household-scoped APIs, providers, migrations, PWA and QA.
+
+Acceptance: see the 2026-10-08 extension criteria in docs/quality/ACCEPTANCE.md. Each PR must pass targeted financial/authorization/concurrency tests, regression gates and two consecutive clean browser/visual loops at all four required viewports before merge. Production delivery follows the existing merge-only workflow.
+
+Status: In progress. Implementation and evidence will be recorded for each PR in LOOP_LOG.md.
+
+# 2026-10-08 — Połączenie z bankiem: rozpoznanie możliwości
+
+Feedback: automatycznie pobierać wpływy i wydatki z banku, wiązać operacje z paragonami oraz zlecać prawdziwe przelewy (czynsz, oszczędności) z aplikacji; pytanie o sposób podłączenia.
+
+Interpretation: account-information access (AIS), receipt reconciliation and payment initiation (PIS) are separate capabilities. The existing “Zrób przelew” records an internal account movement and does not send a payment order to a bank. This request is integration discovery, not an implemented banking connection.
+
+Affected: Accounts, Transactions, receipt finalization/review, income, savings/goals, provider boundary and future payment-order state. ADR-003/005 already allow bank feeds and receipt matching; live payments need an additional architecture decision before implementation.
+
+Proposed acceptance criteria for implementation: bank-supported consent flow with server-held credentials and renewable/revocable access; bounded background synchronization with honest last-sync/error states; idempotent import and pending/booked reconciliation; match existing manual/receipt movements without double-counting, use account/amount/currency/date/merchant signals and send ambiguous matches to Review Inbox; distinguish household transfers and pocket payouts from income/expense; retain item-level allocations and exact grosze. Payment initiation requires confirmed provider/bank eligibility, explicit recipient/account/amount/title review, bank authorization, idempotent orders, provider-verified status and reconciliation with imported operations. A bank callback alone must not mark an expense as paid. Verify authorization, financial invariants and two clean browser/visual loops for implemented slices.
+
+Discovery evidence: inspected `apps/web/src/components/future-screens.tsx`, `receipt-screens.tsx`, `apps/api/app/domain.py`, `models.py` and receipt finalization in `main.py`. Checked Enable Banking API/control-panel/FAQ documentation: restricted production access is for linked-account testing; production PIS currently requires a company holding a PISP license. Bank, account type, intended audience and provider commercial terms remain to be established. Sources: https://enablebanking.com/docs/api/control-panel/ ; https://enablebanking.com/docs/faq/ ; https://enablebanking.com/docs/api/reference/ .
+
+Status: discovery recorded; no application code or live bank connection changed. No implementation quality gates or visual-loop completion claimed.
+
+User clarification: mBank and Santander plus other accounts; currently for Roch and Kaja, potentially other users later. Begin provider eligibility checks with those banks and private linked-account testing; broader access and live PIS remain separate commercial/regulatory integration decisions. Confirm the exact Santander institution and each savings account's API capabilities before promising coverage.
+
+Further source verification: https://auth.enablebanking.com/guides/PL/ lists mBank and Santander Bank Polska. The linked-accounts documentation explicitly permits individual non-commercial use as well as evaluation; restricted mode is therefore not described as testing only. Verify terms for Kaja's separately owned accounts and any fees before selecting it for the household. https://enablebanking.com/docs/api/linked-accounts/ explains production registration, “Activate by linking accounts”, linked-account restrictions and the separate API authorization required afterward.

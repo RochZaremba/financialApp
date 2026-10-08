@@ -1159,3 +1159,129 @@ test("named income sources, contributors, corrections and independent months", a
     data: { name: `Źródła QA ${unique}` },
   });
 });
+
+test("saved transaction editing updates balances and rejects concurrent changes", async ({
+  page,
+}, testInfo) => {
+  const unique = `${Date.now()}-${testInfo.project.name}`;
+  expect(
+    (
+      await page.request.post("/api/auth/register", {
+        data: {
+          name: "Edycja QA",
+          email: `edit-${unique}@example.com`,
+          password,
+        },
+      })
+    ).status(),
+  ).toBe(201);
+  const created = await page.request.post("/api/households", {
+    data: { name: `Edycja ${unique}` },
+    headers: { "Idempotency-Key": `home-${unique}` },
+  });
+  expect(created.status()).toBe(201);
+  const home = (await created.json()).id;
+  const route = `/api/households/${home}`;
+  const overview = await page.request
+    .get(`${route}/overview?month=2026-10`)
+    .then((r) => r.json());
+  const category = overview.categories[0];
+  const payload = {
+    kind: "expense",
+    amount: 13975,
+    date: "2026-10-04",
+    description: "Zakupy do poprawienia",
+    account_id: overview.accounts[0].id,
+    allocations: [{ category_id: category.id, amount: 13975 }],
+  };
+  const original = await page.request
+    .post(`${route}/transactions`, {
+      data: payload,
+      headers: { "Idempotency-Key": `tx-${unique}` },
+    })
+    .then((r) => r.json());
+  await go(page, `/transakcje?edit=${original.id}`);
+  await expect(page.getByLabel("Kwota (zł)", { exact: true })).toHaveValue(
+    "139,75",
+  );
+  await expect(page.getByLabel("Nazwa lub krótki opis")).toHaveValue(
+    payload.description,
+  );
+  for (const width of [390, 430, 768, 1440]) {
+    await page.setViewportSize({ width, height: width === 1440 ? 900 : 1024 });
+    await noOverflow(page);
+    expect(
+      (
+        await new AxeBuilder({ page })
+          .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+          .analyze()
+      ).violations,
+    ).toEqual([]);
+    await page.screenshot({
+      path: `../../artifacts/ui-review/${process.env.REVIEW_PASS || "editing"}/editing-${testInfo.project.name}-${width}.png`,
+      fullPage: true,
+    });
+  }
+  await page.setViewportSize(
+    testInfo.project.use.viewport || { width: 390, height: 844 },
+  );
+  await page.getByLabel("Kwota (zł)", { exact: true }).fill("123,01");
+  await page.getByLabel("Nazwa lub krótki opis").fill("Poprawione zakupy");
+  await page
+    .getByRole("button", { name: "Zapisz zmiany", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Wasza historia." }),
+  ).toBeVisible();
+  await expect(page.locator(".transaction-list")).toContainText("123,01");
+  await page.reload();
+  await expect(page.locator(".transaction-list")).toContainText(
+    "Poprawione zakupy",
+  );
+  await page.getByText("Poprawione zakupy", { exact: true }).click();
+  await page
+    .getByRole("link", { name: "Edytuj transakcję", exact: true })
+    .click();
+  const current = await page.request
+    .get(`${route}/transactions/${original.id}`)
+    .then((r) => r.json());
+  await expect(page.getByLabel("Kwota (zł)", { exact: true })).toHaveValue(
+    "123,01",
+  );
+  expect(
+    (
+      await page.request.put(`${route}/transactions/${original.id}`, {
+        data: {
+          ...payload,
+          amount: 12301,
+          allocations: [{ category_id: category.id, amount: 12301 }],
+          description: "Zmiana drugiego domownika",
+          expected_updated_at: current.updated_at,
+        },
+        headers: { "Idempotency-Key": `concurrent-${unique}` },
+      })
+    ).status(),
+  ).toBe(200);
+  await page.getByLabel("Nazwa lub krótki opis").fill("Moja zmiana");
+  await page
+    .getByRole("button", { name: "Zapisz zmiany", exact: true })
+    .click();
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "została zmieniona",
+  );
+  const after = await page.request
+    .get(`${route}/overview?month=2026-10`)
+    .then((r) => r.json());
+  expect(after.budget.expenses).toBe(12301);
+  expect(after.accounts[0].balance).toBe(
+    after.accounts[0].opening_balance - 12301,
+  );
+  expect(
+    (
+      await page.request
+        .get(`${route}/transactions/${original.id}`)
+        .then((r) => r.json())
+    ).description,
+  ).toBe("Zmiana drugiego domownika");
+  await page.request.delete(route, { data: { name: `Edycja ${unique}` } });
+});

@@ -46,6 +46,8 @@ import {
   Skeleton,
 } from "./ui";
 
+import { ManualTransaction, type MovementKind } from "./movement-form";
+
 function pendingText(count: number) {
   if (count === 1) return "1 sprawa czeka";
   const few =
@@ -956,6 +958,10 @@ export function TransactionRows({
                   <ArrowRight size={16} />
                 </Link>
               )}
+              <Link className="text-button" href={`/transakcje?edit=${t.id}`}>
+                <Pencil size={16} />
+                Edytuj transakcję
+              </Link>
               {t.status === "unallocated" && (
                 <CategorizeTransaction transaction={t} />
               )}
@@ -1003,7 +1009,8 @@ function CategorizeTransaction({ transaction }: { transaction: Transaction }) {
 export function TransactionsScreen() {
   const { household, month } = useApp();
   const params = useSearchParams();
-  const focusedId = params.get("item");
+  const editId = params.get("edit");
+  const focusedId = editId || params.get("item");
   const focused = useQuery({
     queryKey: ["transaction-detail", household, focusedId],
     queryFn: () =>
@@ -1020,6 +1027,30 @@ export function TransactionsScreen() {
         `/households/${household}/transactions?month=${month}&kind=${kind}&search=${encodeURIComponent(search)}&offset=${offset}`,
       ),
   });
+  if (editId)
+    return (
+      <>
+        <PageHeading
+          title="Popraw transakcję."
+          description="Po zapisie zaktualizujemy salda i budżet."
+        />
+        {focused.isPending ? (
+          <Skeleton />
+        ) : focused.isError ? (
+          <ErrorMessage error={focused.error.message} />
+        ) : (
+          focused.data && (
+            <ManualTransaction
+              key={focused.data.id}
+              kind={focused.data.kind as MovementKind}
+              memberId=""
+              goalId=""
+              initial={focused.data}
+            />
+          )
+        )}
+      </>
+    );
   if (focusedId)
     return (
       <>
