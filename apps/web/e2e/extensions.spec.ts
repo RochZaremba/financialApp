@@ -1,6 +1,9 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+// Error injection must reach the browser request, including WebKit.
+// PWA behavior is covered separately in product.spec.ts.
+test.use({ serviceWorkers: "block" });
 const password = "extensions-private-password";
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-08T12:00:00+02:00"));
