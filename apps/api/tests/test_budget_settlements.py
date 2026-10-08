@@ -187,3 +187,27 @@ def test_distribution_validates_ratios_destinations_and_source_balance(client, h
     payload["account_id"] = household["data"]["accounts"][0]["id"]
     payload["transfer_date"] = "2026-11-01"
     assert client.post(route, json=payload).status_code == 422
+
+
+def test_settlement_cannot_close_unpaid_pocket_money_or_goal_commitment(client, household):
+    payload = setup(client, household)
+    path = household["path"]
+    category = household["data"]["categories"][0]["id"]
+    member = household["data"]["members"][0]["id"]
+    goal = client.post(path + "/goals", json=dict(name="Poduszka", target=1000000), headers={"Idempotency-Key": str(uuid4())}).json()["id"]
+    for kind, reference in [("pocket", member), ("goal", goal)]:
+        assert (
+            client.put(
+                path + "/budget/2026-09",
+                json=dict(
+                    planned_income=100001,
+                    allocations=[
+                        dict(kind="category", reference_id=category, amount=50001),
+                        dict(kind=kind, reference_id=reference, amount=50000),
+                    ],
+                ),
+            ).status_code
+            == 200
+        )
+        payload["envelopes"] = [dict(category_id=category, amount=50001)]
+        assert client.post(path + "/budget/2026-09/settlement-preview", json=payload).status_code == 422

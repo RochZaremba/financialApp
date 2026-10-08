@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Decision
 
-A completed planned month can be settled once, after all expenses have categories. Users select positive active-category envelope amounts. Their sum must fit both net plan money and actual recorded income plus incoming carry after all shared spending, pocket transfers and savings. Positive envelopes cannot bypass overspending elsewhere.
+A completed planned month can be settled once, after all expenses have categories and pocket-money/goal commitments have been paid or the plan has been corrected. Users select positive active-category envelope amounts. Their sum must fit both net plan money and actual recorded income plus incoming carry after all shared spending, pocket transfers and savings. Positive envelopes cannot bypass overspending elsewhere.
 
 Carry creates a separate earmarked ledger into the immediately following month. It changes neither bank balances nor income sources nor actual income; edits of the target month's new plan cannot erase incoming funds. Distribution uses user percentages in integer basis points, exact largest-remainder grosze, a sufficiently funded PLN source and other PLN savings accounts with optional household goals. The user explicitly confirms performed transfers and their date in the following month. Recorded transfers affect account/goal balances while reserving source-month surplus; they do not consume next month's new income twice.
 

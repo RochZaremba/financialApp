@@ -78,6 +78,8 @@ def preview(db, household_id, month, data):
         raise HTTPException(422, "Najpierw zapisz plan miesiąca.")
     if budget["unallocated"]:
         raise HTTPException(422, "Najpierw przypisz kategorie wszystkim wydatkom miesiąca.")
+    if any(a["kind"] in ("pocket", "goal") and a["remaining"] > 0 for a in budget["allocations"]):
+        raise HTTPException(422, "Najpierw potwierdź zaplanowane kieszonkowe i wpłaty na cele albo popraw plan miesiąca.")
     available = max(0, min(budget["remaining"], budget["income"] + budget["carry_in"] - budget["spent"]))
     amounts = {a["reference_id"]: a for a in budget["allocations"] if a["kind"] == "category"}
     envelopes = []
