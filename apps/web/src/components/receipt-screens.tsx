@@ -23,14 +23,10 @@ import {
   CheckCheck,
   FilePenLine,
   AlertTriangle,
+  ShoppingBasket,
 } from "lucide-react";
 import { api, ApiError, json } from "@/lib/api";
-import {
-  money,
-  moneyInput,
-  parseMoney,
-  parseSignedMoney,
-} from "@/lib/money";
+import { money, moneyInput, parseMoney, parseSignedMoney } from "@/lib/money";
 import type { Receipt, ReceiptItem } from "@/lib/types";
 import { useApp, useCommand } from "./context";
 import {
@@ -89,6 +85,10 @@ export function AddScreen() {
       )}
       <div className="add-more">
         <span>Chcesz zrobić coś jeszcze?</span>
+        <Link className="text-button" href="/zakupy?add=1">
+          <ShoppingBasket size={17} />
+          Produkt na listę zakupów
+        </Link>
         {kind !== "pocket" && (
           <button className="text-button" onClick={() => setKind("pocket")}>
             <Wallet size={17} />
@@ -420,6 +420,14 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
           </button>
         }
       />
+      {readOnly && (
+        <Link
+          className="button secondary"
+          href={`/zakupy?tab=stock&receipt=${receipt.id}`}
+        >
+          Dodaj produkty do domowych zapasów <ArrowRight size={17} />
+        </Link>
+      )}
       {receipt.provider === "fixture" && (
         <div className="notice soft">
           <ScanLine size={17} />

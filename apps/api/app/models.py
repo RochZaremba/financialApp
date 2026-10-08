@@ -30,6 +30,45 @@ class Scoped(Record):
     household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
 
 
+class InventoryItem(Scoped, Base):
+    __tablename__ = "inventory_items"
+    name: Mapped[str] = mapped_column(String(120))
+    quantity: Mapped[int] = mapped_column(BigInteger)
+    unit: Mapped[str] = mapped_column(String(12))
+    location: Mapped[str] = mapped_column(String(12))
+    expires_on: Mapped[DateValue | None] = mapped_column(Date, nullable=True)
+    minimum: Mapped[int] = mapped_column(BigInteger, default=0)
+    __table_args__ = (
+        CheckConstraint("quantity between 0 and 1000000000 and minimum between 0 and 1000000000"),
+        CheckConstraint("unit in ('szt','kg','g','l','ml','opak')"),
+        CheckConstraint("location in ('fridge','freezer','pantry','cupboard')"),
+    )
+
+
+class ShoppingItem(Scoped, Base):
+    __tablename__ = "shopping_items"
+    name: Mapped[str] = mapped_column(String(120))
+    quantity: Mapped[int] = mapped_column(BigInteger)
+    unit: Mapped[str] = mapped_column(String(12))
+    location: Mapped[str] = mapped_column(String(12))
+    estimated_amount: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(12), default="pending")
+    purchased_on: Mapped[DateValue | None] = mapped_column(Date, nullable=True)
+    actual_amount: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    merchant: Mapped[str] = mapped_column(String(120), default="")
+    receipt_item_id: Mapped[str | None] = mapped_column(ForeignKey("receipt_items.id"), nullable=True, unique=True)
+    inventory_id: Mapped[str | None] = mapped_column(ForeignKey("inventory_items.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (
+        CheckConstraint("quantity between 1 and 1000000000"),
+        CheckConstraint("unit in ('szt','kg','g','l','ml','opak')"),
+        CheckConstraint("location in ('fridge','freezer','pantry','cupboard')"),
+        CheckConstraint("estimated_amount is null or estimated_amount between 0 and 100000000000"),
+        CheckConstraint("actual_amount is null or actual_amount between 0 and 100000000000"),
+        CheckConstraint("(status = 'pending' and purchased_on is null) or (status = 'bought' and purchased_on is not null)"),
+    )
+
+
 class User(Record, Base):
     __tablename__ = "users"
     email: Mapped[str] = mapped_column(String(254), unique=True)
