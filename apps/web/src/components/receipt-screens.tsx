@@ -234,14 +234,18 @@ function ManualTransaction({
       a.reference_id === (kind === "pocket" ? selectedMember : selectedGoal),
   );
   const [sourceAccount, setSourceAccount] = useState(
-    data.accounts.find((a) => a.kind === "checking")?.id ||
-      data.accounts[0]?.id ||
+    data.accounts.find((a) => a.currency === "PLN" && a.kind === "checking")
+      ?.id ||
+      data.accounts.find((a) => a.currency === "PLN")?.id ||
       "",
   );
   const [destinationAccount, setDestinationAccount] = useState(
-    data.accounts.find((a) => a.kind === "savings" && a.id !== sourceAccount)
-      ?.id ||
-      data.accounts.find((a) => a.id !== sourceAccount)?.id ||
+    data.accounts.find(
+      (a) =>
+        a.currency === "PLN" && a.kind === "savings" && a.id !== sourceAccount,
+    )?.id ||
+      data.accounts.find((a) => a.currency === "PLN" && a.id !== sourceAccount)
+        ?.id ||
       "",
   );
   const [splits, setSplits] = useState([{ category_id: "", amount: "" }]);
@@ -343,7 +347,10 @@ function ManualTransaction({
         />
       </Card>
     );
-  if ((kind === "transfer" || kind === "saving") && data.accounts.length < 2)
+  if (
+    (kind === "transfer" || kind === "saving") &&
+    data.accounts.filter((a) => a.currency === "PLN").length < 2
+  )
     return (
       <Card>
         <Empty
@@ -427,16 +434,20 @@ function ManualTransaction({
               setSourceAccount(e.target.value);
               if (destinationAccount === e.target.value)
                 setDestinationAccount(
-                  data.accounts.find((a) => a.id !== e.target.value)?.id || "",
+                  data.accounts.find(
+                    (a) => a.currency === "PLN" && a.id !== e.target.value,
+                  )?.id || "",
                 );
             }}
             required
           >
-            {data.accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
+            {data.accounts
+              .filter((a) => a.currency === "PLN")
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
           </Select>
           {(kind === "saving" || kind === "transfer") && (
             <Select
@@ -447,7 +458,7 @@ function ManualTransaction({
               required
             >
               {data.accounts
-                .filter((a) => a.id !== sourceAccount)
+                .filter((a) => a.currency === "PLN" && a.id !== sourceAccount)
                 .map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
@@ -1131,11 +1142,13 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
         {!readOnly && (
           <Card className="receipt-confirm">
             <Select label="Z którego konta zapłacono?" name="account" required>
-              {data.accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
+              {data.accounts
+                .filter((a) => a.currency === "PLN")
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
             </Select>
             <p className="muted small">
               Poprawione kategorie zapamiętamy tylko dla Waszego gospodarstwa.

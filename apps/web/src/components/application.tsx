@@ -149,6 +149,10 @@ function Authenticated() {
     queryFn: () =>
       api<Overview>(`/households/${household}/overview?month=${month}`),
     enabled: !!household && !!auth.data,
+    refetchInterval: (query) =>
+      query.state.data?.accounts.some((a) => a.currency !== "PLN")
+        ? 60_000
+        : false,
   });
   useEffect(() => {
     const expired = () => {

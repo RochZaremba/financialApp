@@ -16,6 +16,7 @@ from .config import settings
 from .db import get_db
 from .domain import (
     account_data,
+    pln_account,
     audit,
     budget_data,
     classify,
@@ -33,6 +34,7 @@ from .domain import (
     today,
     transaction_data,
 )
+from .exchange import value_accounts
 from .middleware import RequestBodyLimit
 from .models import (
     Account,
@@ -253,12 +255,15 @@ def overview(household_id: str, month: str, member: Membership, db: Db):
             .limit(6)
         )
     )
+    accounts = account_data(db, household_id)
+    valuation = value_accounts(accounts)
     return dict(
+        account_valuation=valuation,
         household=serialize(db.get(Household, household_id)),
         members=members,
         categories=[serialize(c) for c in records(db, Category, household_id)],
         budget=budget_data(db, household_id, month),
-        accounts=account_data(db, household_id),
+        accounts=accounts,
         goals=goal_data(db, household_id),
         tasks=tasks,
         recent=[transaction_data(db, t) for t in transactions],
@@ -486,7 +491,7 @@ def recurring_create(household_id: str, data: RecurringInput, key: Key, member: 
     category = scoped(db, Category, household_id, data.category_id)
     if category.archived:
         raise HTTPException(422, "Wybierz aktywną kategorię.")
-    scoped(db, Account, household_id, data.account_id)
+    pln_account(db, household_id, data.account_id)
     row = create_record(db, member, Recurring, data.model_dump(), key)
     db.add(row)
     db.commit()
@@ -499,7 +504,7 @@ def recurring_update(household_id: str, recurring_id: str, data: RecurringInput,
     category = scoped(db, Category, household_id, data.category_id)
     if category.archived and data.active:
         raise HTTPException(422, "Wybierz aktywną kategorię dla stałego wydatku.")
-    scoped(db, Account, household_id, data.account_id)
+    pln_account(db, household_id, data.account_id)
     for key, value in data.model_dump().items():
         setattr(row, key, value)
     row.updated_by = member.user_id
@@ -902,6 +907,7 @@ def export(household_id: str, member: Membership, db: Db):
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "currency": "PLN",
         "money_unit": "grosz",
+        "account_money_unit": "1/100 of each account currency",
     }
     for model in models:
         data[model.__tablename__] = [serialize(r) for r in records(db, model, household_id)]

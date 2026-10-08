@@ -104,6 +104,13 @@ def learn(db, household_id, name, category_id, user_id):
         )
 
 
+def pln_account(db, household_id, account_id):
+    account = scoped(db, Account, household_id, account_id)
+    if account.currency != "PLN":
+        raise HTTPException(422, "Transakcje budżetu zapisujemy w złotych. Wybierz konto PLN.")
+    return account
+
+
 def create_transaction(db: Session, member: Member, data: TransactionInput, key: str, source="manual", source_id=None):
     # Serializes duplicate submissions and budget-affecting writes within one household.
     from .models import Household
@@ -115,11 +122,11 @@ def create_transaction(db: Session, member: Member, data: TransactionInput, key:
         if existing.request_hash != fingerprint:
             raise HTTPException(409, "Ten zapis już istnieje z innymi danymi. Odśwież formularz.")
         return existing
-    scoped(db, Account, member.household_id, data.account_id)
+    pln_account(db, member.household_id, data.account_id)
     if data.date.year < 2000 or data.date.year > 2100:
         raise HTTPException(422, "Wybierz datę pomiędzy 2000 a 2100 rokiem.")
     if data.destination_id:
-        scoped(db, Account, member.household_id, data.destination_id)
+        pln_account(db, member.household_id, data.destination_id)
         if data.destination_id == data.account_id:
             raise HTTPException(422, "Wybierz dwa różne konta.")
     if data.kind in ("transfer", "saving") and not data.destination_id:

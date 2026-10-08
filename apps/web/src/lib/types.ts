@@ -27,6 +27,9 @@ export type Member = {
   role: string;
 };
 export type Account = {
+  currency: "PLN" | "EUR" | "USD" | "GBP" | "CHF";
+  balance_pln: number | null;
+  exchange_rate: string | null;
   id: string;
   name: string;
   kind: string;
@@ -122,6 +125,11 @@ export type Overview = {
   categories: Category[];
   budget: Budget;
   accounts: Account[];
+  account_valuation: {
+    total_pln: number | null;
+    rate_date: string | null;
+    status: "current" | "cached" | "unavailable";
+  };
   goals: Goal[];
   tasks: Task[];
   recent: Transaction[];

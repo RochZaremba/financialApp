@@ -125,3 +125,13 @@ Implementation: persisted monthly source records with named contributors and ser
 Verification: lint/typecheck/build, 7 frontend, 19 deployment and 67 API tests passed. Two successive complete source flows passed in Chromium desktop/mobile and WebKit, including 30 screenshots across all four widths, accessibility/overflow/alert-occlusion checks, person assignment, reload, corrections, deletion, errors and month isolation. The normal app starts with migration 005 and preserves all existing period amounts. See LOOP_LOG and PR #12 checks for full protected regressions and production delivery.
 
 Status: Verified locally — two consecutive clean changed-flow loops; protected CI verifies the final published commit.
+
+## 2026-10-08 — Salda kont w walutach
+
+Feedback: „mogę dodać konto w euro i potem będzie się automatycznie przeliczało obecnym kursem na zł do RAZEM NA WASZYCH KONTACH”.
+Interpretation: accounts retain native-currency balances; the server values the combined balance in PLN using the latest published NBP average rate, with visible rate date and honest unavailable/stale states. This is account valuation; household transactions and budgeting stay PLN.
+Affected: account creation/cards/total, account persistence, overview, transaction account choices and server validation.
+Acceptance: PLN default preserves existing accounts; support EUR/USD/GBP/CHF in integer minor units; exact server rounding; automatic cached NBP refresh; show native and PLN amounts/date; never silently omit an unpriced account from total; protect PLN transactions from foreign accounts; authorization/idempotency and migration tests; two clean responsive browser loops.
+Status: implementation in progress.
+
+Implementation/verification (account currency feedback): added currency selection, native balances, server-calculated PLN valuations and totals with NBP rate/date, automatic refresh and honest unavailable/cached states. Added migration 006 and currency-preserving export metadata. Kept PLN transactions safe through filtered choices and server validation. Full gate passed (7 frontend, 77 API, 20 deployment, 14 desktop/mobile E2E tests). Fixed a mobile rate-paragraph layout defect found by direct screenshot review; two subsequent clean four-viewport loops and 52 unmocked screen checks passed. Evidence: `artifacts/currency-final-check.log`, `artifacts/currency-clean-loops.log`, `artifacts/ui-review/currency/`, `artifacts/ui-review/currency-final/`, and LOOP_LOG. Status: verified locally; production delivery follows the existing merge-only workflow.
