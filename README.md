@@ -15,7 +15,7 @@
 
 Razem. to aplikacja do prywatnego budżetu gospodarstwa domowego. Dochód dostaje konkretne zadania: codzienne potrzeby, przyjemności, kieszonkowe i oszczędności. W każdej chwili widać, ile zostało na miesiąc i w poszczególnych kopertach.
 
-- **Budżet miesięczny** — nazwane źródła dochodu przypisane do domowników, kategorie, kwoty do przydzielenia i historia miesięcy.
+- **Budżet miesięczny** — nazwane źródła dochodu przypisane do domowników, kategorie, kwoty do przydzielenia i historia miesięcy. W edytorze możesz podejrzeć plan innego miesiąca i zastosować go do szkicu; kopiowanie nie powiela transakcji, a zapis chroni przed nadpisaniem równoczesnych zmian.
 - **Wydatki i wpływy** — szybkie wpisy, podział na kilka kategorii, historia, edycja zapisanych transakcji i transfery między kontami. Korekty aktualizują salda i budżet; równoczesne zmiany wymagają odświeżenia. Dla zatwierdzonego paragonu można zmienić opis i konto, a dane dokumentu pozostają spójne.
 - **Paragony z telefonu** — zdjęcie, OCR przez Gemini lub OpenAI, klasyfikacja każdej pozycji i przegląd niepewnych wyników. Błędy można poprawić; szkic zostaje zachowany.
 - **Kieszonkowe** — po wypłacie prywatne zakupy nie wymagają rozliczania we wspólnym budżecie.

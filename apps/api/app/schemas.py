@@ -55,6 +55,7 @@ class IncomeSourceInput(Schema):
 
 
 class BudgetInput(Schema):
+    expected_updated_at: datetime | None = None
     planned_income: Money | None = None
     income_sources: list[IncomeSourceInput] | None = Field(default=None, max_length=50)
     allocations: list[AllocationInput] = Field(max_length=150)

@@ -1208,7 +1208,11 @@ test("saved transaction editing updates balances and rejects concurrent changes"
     payload.description,
   );
   for (const width of [390, 430, 768, 1440]) {
-    await page.setViewportSize({ width, height: width === 1440 ? 900 : 1024 });
+    await page.setViewportSize({
+      width,
+      height:
+        width === 390 ? 844 : width === 430 ? 932 : width === 1440 ? 900 : 1024,
+    });
     await noOverflow(page);
     expect(
       (

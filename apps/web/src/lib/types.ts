@@ -63,7 +63,7 @@ export type IncomeSource = {
   amount: number;
 };
 export type Budget = {
-  period: { id: string } | null;
+  period: { id: string; updated_at: string } | null;
   month: string;
   planned_income: number;
   income_sources: IncomeSource[];
@@ -173,4 +173,12 @@ export type Analytics = {
     savings: number;
     income: number;
   }[];
+};
+
+export type BudgetCopyPreview = {
+  source_month: string;
+  planned_income: number;
+  income_sources: Omit<IncomeSource, "id">[];
+  allocations: Pick<Allocation, "kind" | "reference_id" | "amount" | "label">[];
+  omitted: string[];
 };

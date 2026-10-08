@@ -47,6 +47,7 @@ import {
 } from "./ui";
 
 import { ManualTransaction, type MovementKind } from "./movement-form";
+import { MonthCopy } from "./month-copy";
 
 function pendingText(count: number) {
   if (count === 1) return "1 sprawa czeka";
@@ -577,6 +578,8 @@ function BudgetEditor({ close }: { close: () => void }) {
   const { data, household, month, me } = useApp();
   const command = useCommand();
   const b = data.budget;
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [revision] = useState(b.period?.updated_at || null);
   const base: {
     kind: Allocation["kind"];
     reference_id: string;
@@ -654,8 +657,9 @@ function BudgetEditor({ close }: { close: () => void }) {
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     await command.run(
-      async () => {
+      async (key) => {
         const payload = {
+          expected_updated_at: revision,
           income_sources: sources.map((source) => ({
             name: source.name.trim(),
             member_id: source.member_id || null,
@@ -669,7 +673,7 @@ function BudgetEditor({ close }: { close: () => void }) {
         };
         return api(
           `/households/${household}/budget/${month}`,
-          json("PUT", payload),
+          json("PUT", payload, key),
         );
       },
       "Plan miesiąca zapisany",
@@ -678,6 +682,32 @@ function BudgetEditor({ close }: { close: () => void }) {
   }
   return (
     <form onSubmit={submit} className="budget-editor">
+      <MonthCopy
+        onOpen={setCopyOpen}
+        apply={(proposal) => {
+          setSources(
+            proposal.income_sources.map((source, index) => ({
+              ...source,
+              id: `copy-${index}`,
+              member_id: source.member_id || "",
+              amount: moneyInput(source.amount),
+            })),
+          );
+          setValues(
+            Object.fromEntries(
+              base.map((a) => [
+                a.reference_id,
+                moneyInput(
+                  proposal.allocations.find(
+                    (x) =>
+                      x.kind === a.kind && x.reference_id === a.reference_id,
+                  )?.amount || 0,
+                ),
+              ]),
+            ),
+          );
+        }}
+      />
       <Card className="income-plan">
         <div className="income-heading">
           <div>
@@ -838,24 +868,30 @@ function BudgetEditor({ close }: { close: () => void }) {
             ))}
         </Card>
       ))}
-      <div className="form-actions sticky-actions">
-        <ErrorMessage error={command.error} />
-        <span>
-          {command.error
-            ? "Popraw dane i zapisz ponownie."
-            : income > 0 && unassigned === 0
-              ? "Gotowe. Wasz miesiąc ma plan."
-              : "Możesz zapisać i dokończyć plan później."}
-        </span>
-        <div>
-          {b.period && (
-            <button className="button secondary" type="button" onClick={close}>
-              Anuluj
-            </button>
-          )}
-          <Submit busy={command.busy}>Zapisz plan</Submit>
+      {!copyOpen && (
+        <div className="form-actions sticky-actions">
+          <ErrorMessage error={command.error} />
+          <span>
+            {command.error
+              ? "Popraw dane i zapisz ponownie."
+              : income > 0 && unassigned === 0
+                ? "Gotowe. Wasz miesiąc ma plan."
+                : "Możesz zapisać i dokończyć plan później."}
+          </span>
+          <div>
+            {b.period && (
+              <button
+                className="button secondary"
+                type="button"
+                onClick={close}
+              >
+                Anuluj
+              </button>
+            )}
+            <Submit busy={command.busy}>Zapisz plan</Submit>
+          </div>
         </div>
-      </div>
+      )}
     </form>
   );
 }
