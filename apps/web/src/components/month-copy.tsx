@@ -1,34 +1,50 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { money, monthName, shiftMonth } from "@/lib/money";
 import type { BudgetCopyPreview } from "@/lib/types";
-import { useApp, useCommand } from "./context";
+import { useApp } from "./context";
 import { Card, ErrorMessage, Field } from "./ui";
 
 export function MonthCopy({
   apply,
+  onOpen,
 }: {
   apply: (proposal: BudgetCopyPreview) => void;
+  onOpen: (open: boolean) => void;
 }) {
   const { household, month } = useApp();
-  const command = useCommand();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const details = useRef<HTMLDetailsElement>(null);
   const [source, setSource] = useState(shiftMonth(month, -1));
   const [proposal, setProposal] = useState<BudgetCopyPreview | null>(null);
   async function preview() {
+    if (busy) return;
     setProposal(null);
-    await command.run(
-      () =>
-        api<BudgetCopyPreview>(
+    setBusy(true);
+    setError("");
+    try {
+      setProposal(
+        await api<BudgetCopyPreview>(
           `/households/${household}/budget/${month}/copy-preview?source_month=${encodeURIComponent(source)}`,
         ),
-      "Plan wczytany do podglądu",
-      setProposal,
-    );
+      );
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Nie udało się wczytać planu.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <Card>
-      <details className="planning-tool">
+      <details
+        ref={details}
+        className="planning-tool"
+        onToggle={(e) => onOpen(e.currentTarget.open)}
+      >
         <summary>Skopiuj plan innego miesiąca</summary>
         <p className="muted small">
           Wczytasz dochody i przydziały do szkicu. Transakcje i salda pozostają
@@ -50,14 +66,14 @@ export function MonthCopy({
             <button
               type="button"
               className="button secondary"
-              disabled={command.busy || !source || source === month}
+              disabled={busy || !source || source === month}
               onClick={preview}
             >
-              {command.busy ? "Wczytuję plan…" : "Pokaż plan do skopiowania"}
+              {busy ? "Wczytuję plan…" : "Pokaż plan do skopiowania"}
             </button>
           </div>
         </div>
-        <ErrorMessage error={command.error} />
+        <ErrorMessage error={error} />
         {proposal && (
           <div className="copy-preview">
             <h3>Plan z {monthName(proposal.source_month)}</h3>
@@ -94,6 +110,7 @@ export function MonthCopy({
               onClick={() => {
                 apply(proposal);
                 setProposal(null);
+                if (details.current) details.current.open = false;
               }}
             >
               Zastosuj do szkicu

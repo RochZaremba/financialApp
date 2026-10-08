@@ -98,6 +98,7 @@ test("copy a monthly plan into a reviewed draft without duplicating transactions
     (await page.request.get(`${route}/budget/2026-10`).then((r) => r.json()))
       .period,
   ).toBeNull();
+  await expect(page.locator(".sticky-actions")).toHaveCount(0);
   await review(page, "copy-preview", testInfo);
   await page
     .getByRole("button", { name: "Zastosuj do szkicu", exact: true })
