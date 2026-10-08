@@ -79,6 +79,7 @@ async function review(page: Page, info: TestInfo, label: string) {
           .analyze()
       ).violations,
     ).toEqual([]);
+    await page.getByLabel("Co zrobić z nadwyżką?").focus();
     await page.screenshot({
       path: `../../artifacts/ui-review/${process.env.REVIEW_PASS || "surplus"}/${label}-${info.project.name}-${viewport.width}.png`,
       fullPage: true,
@@ -112,6 +113,9 @@ test("carry envelope balances into next month without creating income", async ({
   await expect(page.getByRole("button", { name: "Edytuj plan" })).toHaveCount(
     0,
   );
+  await page.goto("/");
+  await expect(page.locator("main")).toContainText("Do kolejnego miesiąca:");
+  await page.goto("/budzet");
   await page.getByRole("button", { name: "Następny miesiąc" }).click();
   await expect(page.locator("main")).toContainText("z poprzedniego miesiąca");
   const budget = await page.request

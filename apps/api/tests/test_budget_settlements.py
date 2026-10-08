@@ -45,6 +45,9 @@ def test_carry_is_not_income_and_is_independent_after_plan_save(client, househol
     assert client.put(household["path"] + "/budget/2026-10", json=dict(planned_income=30000, allocations=[])).status_code == 200
     target = client.get(household["path"] + "/budget/2026-10").json()
     assert target["remaining"] == 130001 and target["unassigned"] == 30000
+    analytics = client.get(household["path"] + "/analytics?month=2026-10").json()
+    assert analytics["forecast_remaining"] == 130001
+    assert analytics["trend"][-1]["planned"] == 130001
     source = client.get(route).json()
     assert source["carry_out"] == 100001 and source["remaining"] == 0
     assert all(a["remaining"] == 0 for a in source["allocations"])

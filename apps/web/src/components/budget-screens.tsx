@@ -198,6 +198,9 @@ export function Home() {
               {!!b.carry_in && (
                 <>Z poprzedniego miesiąca: {money(b.carry_in)}. </>
               )}
+              {!!b.carry_out && (
+                <>Do kolejnego miesiąca: {money(b.carry_out)}. </>
+              )}
               W tym {money(b.savings, false)} odłożone i{" "}
               {money(b.pocket, false)} kieszonkowego.
             </div>
@@ -441,7 +444,7 @@ export function BudgetScreen() {
             </Card>
             <Card
               className={
-                b.planned_income > 0 && b.unassigned === 0 ? "zero-card" : ""
+                b.available > 0 && b.unassigned === 0 ? "zero-card" : ""
               }
             >
               <span className="eyebrow">
@@ -453,12 +456,12 @@ export function BudgetScreen() {
                 {money(b.unassigned)}
               </strong>
               <small>
-                {b.planned_income > 0 && b.unassigned === 0 ? (
+                {b.available > 0 && b.unassigned === 0 ? (
                   <>
                     <Check size={14} />
                     Wszystko ma swoje miejsce
                   </>
-                ) : b.planned_income === 0 ? (
+                ) : b.available === 0 ? (
                   "Dodaj źródła dochodu"
                 ) : (
                   "Dostosuj kwoty w planie"

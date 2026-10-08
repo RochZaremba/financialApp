@@ -1089,7 +1089,7 @@ def analytics(household_id: str, month: str, member: Membership, db: Db):
         trend.append(
             dict(
                 month=m,
-                planned=data["planned_income"],
+                planned=data["available"],
                 spent=data["expenses"] + data["pocket"],
                 savings=data["savings"],
                 income=data["income"],

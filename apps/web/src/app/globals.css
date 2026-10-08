@@ -4183,3 +4183,18 @@ select:focus-visible {
   width: 20px;
   height: 20px;
 }
+
+.surplus-form input,
+.surplus-form select {
+  min-width: 0;
+  max-width: 100%;
+}
+.surplus-preview-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .surplus-form .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
