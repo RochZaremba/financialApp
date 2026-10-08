@@ -335,3 +335,5 @@ The following surplus loop reached the repaired desktop distribution UI but expo
 Kryteria: propozycja dla wszystkich aktywnych kategorii, suma dokładnie równa dochodowi po zarezerwowaniu kieszonkowego/celów; podgląd i osobne zastosowanie do szkicu; brak automatycznego zapisu; brak surowych paragonów w zapytaniu AI; uczciwe założenia i niedostępność.
 
 Wstępne osiem testów API przechodzi: ścisły kontrakt OpenAI/Gemini, dokładny podział z zaokrągleniami, historia i płatności, autoryzacja, brak zapisów, błędny total/obca kategoria/duplikat. Lint i typecheck przeszły. E2E sprawdza podgląd, niezmienione kieszonkowe, zastosowanie/zapis, cztery viewporty oraz axe. Pełne pętle wymagane przed scaleniem.
+
+AI planning's first hosted run failed only at the E2E save locator: the test used “Zapisz plan miesiąca” while the actual established button is “Zapisz plan”. Corrected the test to the real accessible name; the earlier run is not counted as clean. Provider protocol, exact amounts and preview/application checks passed before that locator.

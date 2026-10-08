@@ -162,7 +162,7 @@ test("review a complete budget proposal and apply it only to the draft", async (
   await expect(
     page.getByLabel(`${data.members[0].name} — plan (zł)`),
   ).toHaveValue("200");
-  await page.getByRole("button", { name: "Zapisz plan miesiąca" }).click();
+  await page.getByRole("button", { name: "Zapisz plan", exact: true }).click();
   await expect(page.getByRole("button", { name: "Edytuj plan" })).toBeVisible();
   const saved = await page.request
     .get(`${route}/budget/2026-10`)
