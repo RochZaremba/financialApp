@@ -82,12 +82,14 @@ if [[ "$check_mode" == "full" ]]; then
         npm run e2e &&
         node scripts/visual-review.mjs "$REVIEW_PASS" &&
         node scripts/state-review.mjs "$REVIEW_PASS-states" &&
-        node scripts/release-probes.mjs "$REVIEW_PASS-probes" --verify
+        node scripts/release-probes.mjs "$REVIEW_PASS-probes" --verify &&
+        node scripts/currency-review.mjs
       '
   else
     npm run e2e
     node scripts/visual-review.mjs "${REVIEW_PASS:-check}"
     node scripts/state-review.mjs "${REVIEW_PASS:-check}-states"
     node scripts/release-probes.mjs "${REVIEW_PASS:-check}-probes" --verify
+    node scripts/currency-review.mjs
   fi
 fi

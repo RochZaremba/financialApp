@@ -35,6 +35,8 @@ describe("integer-grosz boundary and Polish display", () => {
   });
   it("formats whole and fractional parts separately", () => {
     expect(money(13975)).toBe("139,75 zł");
+    expect(money(13975, true, "EUR")).toBe("139,75 EUR");
+    expect(money(-1, true, "CHF")).toBe("−0,01 CHF");
     expect(money(-1)).toBe("−0,01 zł");
     expect(money(100000, false).replace(/\s/g, " ")).toBe("1 000 zł");
   });

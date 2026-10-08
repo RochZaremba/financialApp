@@ -67,8 +67,12 @@ class Account(Scoped, Base):
     __tablename__ = "accounts"
     name: Mapped[str] = mapped_column(String(80))
     kind: Mapped[str] = mapped_column(String(20), default="checking")
+    currency: Mapped[str] = mapped_column(String(3), default="PLN", server_default="PLN")
     opening_balance: Mapped[int] = mapped_column(BigInteger, default=0)
-    __table_args__ = (CheckConstraint("kind in ('checking','cash','savings')"),)
+    __table_args__ = (
+        CheckConstraint("kind in ('checking','cash','savings')"),
+        CheckConstraint("currency in ('PLN','EUR','USD','GBP','CHF')", name="accounts_currency"),
+    )
 
 
 class Category(Scoped, Base):

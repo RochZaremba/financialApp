@@ -2051,6 +2051,12 @@ select:focus-visible {
   overflow-wrap: anywhere;
   max-width: 100%;
 }
+.account-card > p {
+  grid-column: 2;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 8px;
+}
 .account-card > a {
   font-size: 12px;
   margin-top: 20px;

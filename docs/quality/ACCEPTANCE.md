@@ -32,3 +32,10 @@ GitHub CI/CD: public main history excludes personal spreadsheets and secrets; PR
 CI browser reviews use the same fixed Europe/Warsaw QA date as the receipt/budget fixtures, rather than the runner's current month. A future calendar date must not turn the fixture payout or over-allocation checks into false failures.
 
 Named monthly income sources: the plan accepts multiple names, exact amounts and household contributors (or a shared source). The server derives the total; planning never creates an actual income transaction. Existing totals migrate without change, months stay independent, cross-household member references are rejected, identical name/person pairs cannot be repeated, edits/deletions persist, and household export/deletion includes sources. Verify reload, 390/430/768/1440 layouts, empty/error states and two clean regressions.
+
+## Account currency valuation (2026-10-08)
+- Add PLN/EUR/USD/GBP/CHF accounts with native integer-minor-unit balances.
+- Account cards show native currency and PLN valuation; total is server-calculated using latest NBP table A, with publication date.
+- Rate failures show last known rate explicitly or an unavailable full total, never an apparently complete partial total.
+- Existing accounts and all budget transactions remain PLN; foreign accounts cannot be used in PLN financial writes.
+- Verify exact positive/negative rounding, invalid currencies/provider data, authorization/idempotency, fresh migration and two responsive UI loops.

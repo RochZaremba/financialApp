@@ -427,6 +427,7 @@ export function AnalyticsScreen() {
 export function AccountsScreen() {
   const { data, household } = useApp();
   const [adding, setAdding] = useState(false);
+  const [currency, setCurrency] = useState("PLN");
   const command = useCommand();
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -440,6 +441,7 @@ export function AccountsScreen() {
             {
               name: f.get("name"),
               kind: f.get("kind"),
+              currency: f.get("currency"),
               opening_balance: parseSignedMoney(String(f.get("opening"))),
             },
             key,
@@ -467,9 +469,23 @@ export function AccountsScreen() {
       <Card className="accounts-total">
         <span className="eyebrow">RAZEM NA WASZYCH KONTACH</span>
         <strong>
-          {money(data.accounts.reduce((sum, a) => sum + a.balance, 0))}
+          {data.account_valuation.total_pln === null
+            ? "Brak aktualnej wyceny"
+            : money(data.account_valuation.total_pln)}
         </strong>
-        <p>Przelewy między Waszymi kontami nie zmieniają wspólnego salda.</p>
+        {data.accounts.some((a) => a.currency !== "PLN") ? (
+          <p
+            role={
+              data.account_valuation.status !== "current" ? "status" : undefined
+            }
+          >
+            {data.account_valuation.status === "unavailable"
+              ? "Nie udało się pobrać kursów NBP. Pełna suma będzie dostępna po ponownym połączeniu."
+              : `Wycena według kursów średnich NBP z ${data.account_valuation.rate_date}.${data.account_valuation.status === "cached" ? " Nie udało się odświeżyć kursów — pokazujemy ostatnie pobrane." : ""}`}
+          </p>
+        ) : (
+          <p>Przelewy między Waszymi kontami nie zmieniają wspólnego salda.</p>
+        )}
       </Card>
       {adding && (
         <Card className="form-card">
@@ -488,14 +504,32 @@ export function AccountsScreen() {
                 <option value="cash">Gotówka</option>
                 <option value="savings">Oszczędności</option>
               </Select>
+              <Select
+                name="currency"
+                label="Waluta"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+              >
+                <option value="PLN">PLN — złoty</option>
+                <option value="EUR">EUR — euro</option>
+                <option value="USD">USD — dolar amerykański</option>
+                <option value="GBP">GBP — funt brytyjski</option>
+                <option value="CHF">CHF — frank szwajcarski</option>
+              </Select>
               <MoneyField
-                label="Saldo na start (zł)"
+                label={`Saldo na start (${currency === "PLN" ? "zł" : currency})`}
                 name="opening"
                 defaultValue="0,00"
                 required
                 hint="Saldo sprzed zapisanych transakcji. Może być ujemne, np. −50,00."
               />
             </div>
+            {currency !== "PLN" && (
+              <p className="muted small">
+                Saldo przeliczymy na złote w podsumowaniu. Transakcje budżetu
+                zapisujecie na kontach PLN.
+              </p>
+            )}
             <ErrorMessage error={command.error} />
             <div className="form-actions">
               <button
@@ -526,11 +560,20 @@ export function AccountsScreen() {
                   : "NA CODZIENNOŚĆ"}
             </span>
             <h2>{a.name}</h2>
-            <strong>{money(a.balance)}</strong>
-            <Link href="/dodaj?type=transfer" className="text-button">
-              Zrób przelew
-              <ArrowUpRight size={17} />
-            </Link>
+            <strong>{money(a.balance, true, a.currency)}</strong>
+            {a.currency !== "PLN" && (
+              <p className="muted small">
+                {a.balance_pln === null
+                  ? "Wycena PLN niedostępna"
+                  : `≈ ${money(a.balance_pln)} · 1 ${a.currency} = ${a.exchange_rate?.replace(".", ",")} zł`}
+              </p>
+            )}
+            {a.currency === "PLN" && (
+              <Link href="/dodaj?type=transfer" className="text-button">
+                Zrób przelew
+                <ArrowUpRight size={17} />
+              </Link>
+            )}
           </Card>
         ))}
       </div>
@@ -774,11 +817,13 @@ function RecurringForm({ row, close }: { row?: Recurring; close: () => void }) {
             defaultValue={row?.account_id}
             required
           >
-            {data.accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
+            {data.accounts
+              .filter((a) => a.currency === "PLN")
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
           </Select>
         </div>
         <ErrorMessage error={command.error} />

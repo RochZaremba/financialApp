@@ -99,6 +99,7 @@ class GoalInput(Schema):
 
 
 class AccountInput(Schema):
+    currency: Literal["PLN", "EUR", "USD", "GBP", "CHF"] = "PLN"
     name: Name
     kind: Literal["checking", "cash", "savings"] = "checking"
     opening_balance: Annotated[int, Field(strict=True, ge=-100_000_000_000, le=100_000_000_000)] = 0

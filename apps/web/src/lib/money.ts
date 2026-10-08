@@ -19,13 +19,17 @@ export function parseSignedMoney(value: string): number {
 export function moneyInput(amount: number): string {
   return `${amount < 0 ? "-" : ""}${Math.trunc(Math.abs(amount) / 100)},${String(Math.abs(amount % 100)).padStart(2, "0")}`;
 }
-export function money(amount: number, decimals = true): string {
+export function money(
+  amount: number,
+  decimals = true,
+  currency = "PLN",
+): string {
   const sign = amount < 0 ? "−" : "";
   const whole = new Intl.NumberFormat("pl-PL", {
     useGrouping: "always",
   }).format(Math.trunc(Math.abs(amount) / 100));
   const fraction = String(Math.abs(amount) % 100).padStart(2, "0");
-  return `${sign}${whole}${decimals || Math.abs(amount) % 100 !== 0 ? "," + fraction : ""} zł`;
+  return `${sign}${whole}${decimals || Math.abs(amount) % 100 !== 0 ? "," + fraction : ""} ${currency === "PLN" ? "zł" : currency}`;
 }
 export function warsawDate(): string {
   return new Intl.DateTimeFormat("en-CA", {
