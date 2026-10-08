@@ -41,8 +41,11 @@ from .settlements import (
     preview as settlement_preview,
     confirm as settlement_confirm,
     ensure_open,
+    ensure_schedule_payable,
     policy as surplus_policy,
 )
+
+from .planning import ProposalRequest, proposal, provider_name
 from .exchange import value_accounts
 from .middleware import RequestBodyLimit
 from .models import (
@@ -183,6 +186,7 @@ def me(user: Person, db: Db):
         "households": households,
         "receipt_provider": settings.receipt_provider,
         "receipt_ai_available": settings.receipt_ai_available,
+        "budget_ai_available": provider_name() is not None,
         "thresholds": {
             "auto": round(settings.classification_auto_threshold * 100),
             "review": round(settings.classification_review_threshold * 100),
@@ -681,6 +685,7 @@ def recurring_create(household_id: str, data: RecurringInput, key: Key, member: 
         raise HTTPException(422, "Wybierz aktywną kategorię.")
     pln_account(db, household_id, data.account_id)
     row = create_record(db, member, Recurring, data.model_dump(), key)
+    ensure_schedule_payable(db, household_id, row)
     db.add(row)
     db.commit()
     return serialize(row)
@@ -688,6 +693,7 @@ def recurring_create(household_id: str, data: RecurringInput, key: Key, member: 
 
 @app.put("/households/{household_id}/recurring/{recurring_id}")
 def recurring_update(household_id: str, recurring_id: str, data: RecurringInput, member: Membership, db: Db):
+    db.scalar(select(Household).where(Household.id == household_id).with_for_update())
     row = scoped(db, Recurring, household_id, recurring_id)
     category = scoped(db, Category, household_id, data.category_id)
     if category.archived and data.active:
@@ -696,6 +702,7 @@ def recurring_update(household_id: str, recurring_id: str, data: RecurringInput,
     for key, value in data.model_dump().items():
         setattr(row, key, value)
     row.updated_by = member.user_id
+    ensure_schedule_payable(db, household_id, row)
     db.commit()
     return serialize(row)
 
@@ -1212,3 +1219,10 @@ def budget_settle(household_id: str, month: str, data: SettlementConfirm, member
     result = settlement_confirm(db, member, month, data)
     db.commit()
     return result
+
+
+@app.post("/households/{household_id}/budget/{month}/proposal")
+def budget_proposal(household_id: str, month: str, data: ProposalRequest, member: Membership, db: Db):
+    month_valid(month)
+    rate_limit("budget-proposal:" + household_id + ":" + member.user_id, 5)
+    return proposal(db, household_id, month, data)

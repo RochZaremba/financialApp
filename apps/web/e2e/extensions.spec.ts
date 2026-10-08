@@ -1,6 +1,9 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+// Error injection must reach the browser request, including WebKit.
+// PWA behavior is covered separately in product.spec.ts.
+test.use({ serviceWorkers: "block" });
 const password = "extensions-private-password";
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-08T12:00:00+02:00"));
@@ -56,6 +59,15 @@ async function review(page: Page, label: string, testInfo: TestInfo) {
           .analyze()
       ).violations,
     ).toEqual([]);
+    // Axe can focus the skip link; restore the primary control before capture.
+    await page
+      .getByRole("button", {
+        name: label.startsWith("budget-proposal")
+          ? "Na podstawie historii"
+          : "Pokaż plan do skopiowania",
+        exact: true,
+      })
+      .focus();
     await page.screenshot({
       path: `../../artifacts/ui-review/${process.env.REVIEW_PASS || "extensions"}/${label}-${testInfo.project.name}-${viewport.width}.png`,
       fullPage: true,
@@ -133,5 +145,87 @@ test("copy a monthly plan into a reviewed draft without duplicating transactions
   await expect(page.locator("main").getByRole("alert")).toContainText(
     "nie ma jeszcze planu",
   );
+  await page.request.delete(route, { data: { name } });
+});
+
+test("review a complete budget proposal and apply it only to the draft", async ({
+  page,
+}, info) => {
+  const { route, data, name } = await household(page, info);
+  await page.goto("/budzet");
+  await page.getByLabel("Kwota źródła 1 (zł)", { exact: true }).fill("1000,01");
+  await page.getByLabel(`${data.members[0].name} — plan (zł)`).fill("200");
+  await page.getByText("Pomóż mi rozdzielić budżet", { exact: true }).click();
+  let allowFailure: () => void = () => {};
+  const pendingFailure = new Promise<void>((resolve) => {
+    allowFailure = resolve;
+  });
+  await page.route(
+    "**/budget/*/proposal",
+    async (route) => {
+      await pendingFailure;
+      await route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Nie udało się przygotować propozycji. Spróbuj ponownie.",
+        }),
+      });
+    },
+    { times: 1 },
+  );
+  await page
+    .getByRole("button", { name: "Na podstawie historii", exact: true })
+    .click();
+  await expect(page.getByLabel("Co uwzględnić w propozycji?")).toBeDisabled();
+  await expect(page.getByRole("status")).toContainText(
+    "Przygotowuję propozycję",
+  );
+  allowFailure();
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "Spróbuj ponownie.",
+  );
+  await expect(page.getByLabel("Co uwzględnić w propozycji?")).toBeEnabled();
+  await review(page, "budget-proposal-error", info);
+  await page
+    .getByRole("button", { name: "Na podstawie historii", exact: true })
+    .click();
+  await expect(page.locator(".budget-proposal")).toContainText("800,01");
+  await expect(page.locator(".proposal-row")).toHaveCount(
+    data.categories.length,
+  );
+  expect(
+    (await page.request.get(`${route}/budget/2026-10`).then((r) => r.json()))
+      .period,
+  ).toBeNull();
+  await review(page, "budget-proposal", info);
+  await page.getByLabel("Kwota źródła 1 (zł)", { exact: true }).fill("1100,01");
+  await page
+    .getByRole("button", { name: "Zastosuj propozycję do szkicu" })
+    .click();
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "Szkic zmienił się",
+  );
+  await page
+    .getByRole("button", { name: "Na podstawie historii", exact: true })
+    .click();
+  await expect(page.locator(".budget-proposal")).toContainText("900,01");
+  await page
+    .getByRole("button", { name: "Zastosuj propozycję do szkicu" })
+    .click();
+  await expect(
+    page.getByLabel(`${data.members[0].name} — plan (zł)`),
+  ).toHaveValue("200");
+  await page.getByRole("button", { name: "Zapisz plan", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Edytuj plan" })).toBeVisible();
+  const saved = await page.request
+    .get(`${route}/budget/2026-10`)
+    .then((r) => r.json());
+  expect(saved.unassigned).toBe(0);
+  expect(saved.planned_income).toBe(110001);
+  expect(
+    (await page.request.get(`${route}/transactions`).then((r) => r.json()))
+      .items.length,
+  ).toBe(0);
   await page.request.delete(route, { data: { name } });
 });

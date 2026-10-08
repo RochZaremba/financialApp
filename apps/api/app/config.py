@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     web_origin: str = "http://localhost:3000"
     receipt_storage: str = str(ROOT / "data/receipts")
     receipt_provider: Literal["manual", "fixture", "openai", "gemini"] = "manual"
+    budget_ai_provider: Literal["auto", "history", "openai", "gemini"] = "auto"
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
     gemini_api_key: str = ""

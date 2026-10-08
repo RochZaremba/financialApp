@@ -214,3 +214,46 @@ def test_settlement_cannot_close_unpaid_pocket_money_or_goal_commitment(client, 
         )
         payload["envelopes"] = [dict(category_id=category, amount=50001)]
         assert client.post(path + "/budget/2026-09/settlement-preview", json=payload).status_code == 422
+
+
+def test_closing_does_not_strand_recurring_reminders_or_allow_backdated_schedules(client, household):
+    payload = setup(client, household)
+    path = household["path"]
+    data = dict(
+        name="Rachunek",
+        day=1,
+        amount=10000,
+        category_id=household["data"]["categories"][0]["id"],
+        account_id=household["data"]["accounts"][0]["id"],
+        start_date="2026-09-01",
+        frequency="monthly",
+    )
+    response = client.post(path + "/recurring", json=data, headers={"Idempotency-Key": str(uuid4())})
+    assert response.status_code == 201
+    recurring = response.json()["id"]
+    route = path + "/budget/2026-09"
+    pending = client.post(route + "/settlement-preview", json=payload)
+    assert pending.status_code == 422
+    assert "płatności" in pending.json()["detail"]
+    paid = client.post(path + f"/recurring/{recurring}/pay/2026-09-01")
+    assert paid.status_code == 200
+    payload["envelopes"][0]["amount"] -= 10000
+    preview = client.post(route + "/settlement-preview", json=payload)
+    assert preview.status_code == 200
+    confirmed = dict(**payload, preview_token=preview.json()["preview_token"])
+    assert client.post(route + "/settle", json=confirmed).status_code == 200
+    assert client.post(path + f"/recurring/{recurring}/pay/2026-09-01").json()["id"] == paid.json()["id"]
+    # A new row, or changing the old cadence, must not create unpayable reminders.
+    assert (
+        client.post(path + "/recurring", json={**data, "frequency": "yearly"}, headers={"Idempotency-Key": str(uuid4())}).status_code == 422
+    )
+    assert client.put(path + "/recurring/" + recurring, json={**data, "frequency": "weekly", "start_date": "2026-09-02"}).status_code == 422
+    assert client.get(path + "/overview?month=2026-09").json()["recurring"][0]["frequency"] == "monthly"
+    assert client.get(route).json()["expenses"] == 10000
+    # A schedule beginning in the open month is allowed.
+    assert (
+        client.post(path + "/recurring", json={**data, "start_date": "2026-10-01"}, headers={"Idempotency-Key": str(uuid4())}).status_code
+        == 201
+    )
+
+    assert client.post(path + "/recurring", json={**data, "start_date": None}, headers={"Idempotency-Key": str(uuid4())}).status_code == 201

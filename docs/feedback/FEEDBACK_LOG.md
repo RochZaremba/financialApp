@@ -145,7 +145,11 @@ Affected: Transactions, Budget, Home, Accounts/Goals, recurring expenses, househ
 
 Acceptance: see the 2026-10-08 extension criteria in docs/quality/ACCEPTANCE.md. Each PR must pass targeted financial/authorization/concurrency tests, regression gates and two consecutive clean browser/visual loops at all four required viewports before merge. Production delivery follows the existing merge-only workflow.
 
-Status: In progress. Implementation and evidence will be recorded for each PR in LOOP_LOG.md.
+Implementation: transaction editing (#16), reviewed month copying (#17), advanced filters/product search (#18), weekly/monthly/quarterly/annual schedules with in-app reminders and calendar export (#19), reviewed all-category AI/history proposals (#20), and carry/proportional surplus settlement (#21). Separate branches and protected PR merges are used for every feature.
+
+Rules: settlement explicitly closes the source month, requires real funding and paid/corrected scheduled payments; distribution records confirmed performed transfers. Calendar export is an importable schedule, not background push. AI receives bounded category aggregates/preferences, validates exact grosze and preserves pocket/goal commitments; only explicit application changes the draft and normal save writes it. Incoming carry is credited before funding scheduled expenses. Active schedule changes cannot strand unpaid occurrences in a closed month.
+
+Verification: implementation defects and independent clean-loop evidence are recorded per feature in LOOP_LOG.md. Final integrated local verification passes 118 API tests, 7 frontend tests, lint/typecheck/build, and the proposal error/retry/review/stale-draft/application/save flow in Chromium desktop/mobile and WebKit with four-viewport accessibility/overflow checks. Each PR requires its independent complete protected gate before merge; Actions and Release evidence record the final second loop and production delivery through the existing merge-only workflow.
 
 # 2026-10-08 — Połączenie z bankiem: rozpoznanie możliwości
 

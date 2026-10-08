@@ -13,3 +13,6 @@ Accepted ADRs are binding unless superseded by a later ADR.
 - ADR-009: Merge-only native ARM64 delivery, private backups, restricted SSH and GitHub Releases.
 - ADR-010: Named monthly income sources.
 - ADR-011: Native account currencies and indicative PLN valuation with NBP rates.
+- [ADR-012: Calendar schedules and reminders](ADR-012-recurring-calendar-schedules.md).
+- [ADR-013: Reviewed budget proposals](ADR-013-budget-proposals.md).
+- [ADR-014: Envelope surplus settlement](ADR-014-envelope-surplus-settlement.md).
