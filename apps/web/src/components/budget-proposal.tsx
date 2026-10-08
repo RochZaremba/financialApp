@@ -94,6 +94,7 @@ export function BudgetProposal({
         </p>
         <Field
           label="Co uwzględnić w propozycji?"
+          hint="Preferencje uwzględnia wariant AI."
           placeholder="Np. mniej jedzenia na mieście, większa pula na dom"
           value={preferences}
           maxLength={1000}
