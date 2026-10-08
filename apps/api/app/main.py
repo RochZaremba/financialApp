@@ -60,6 +60,8 @@ from .models import (
     Household,
     Invitation,
     IncomeSource,
+    InventoryItem,
+    ShoppingItem,
     Member,
     Mutation,
     Period,
@@ -73,6 +75,7 @@ from .models import (
     User,
 )
 from .schedules import occurrence_dates, calendar_text, reminders
+from .shopping import router as shopping_router
 from .receipts import MAX_IMAGE_BYTES, provider, storage_path, validated_image
 from .schemas import (
     AccountInput,
@@ -95,6 +98,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Dom · budżet domowy", version="1.0.0")
 app.add_middleware(RequestBodyLimit)
+app.include_router(shopping_router)
 Db = Annotated[Session, Depends(get_db)]
 Person = Annotated[User, Depends(current_user)]
 Membership = Annotated[Member, Depends(household_member)]
@@ -1118,6 +1122,8 @@ def analytics(household_id: str, month: str, member: Membership, db: Db):
 @app.get("/households/{household_id}/export")
 def export(household_id: str, member: Membership, db: Db):
     models = [
+        ShoppingItem,
+        InventoryItem,
         BudgetSettlement,
         SurplusPolicy,
         Member,
@@ -1142,6 +1148,7 @@ def export(household_id: str, member: Membership, db: Db):
         "currency": "PLN",
         "money_unit": "grosz",
         "account_money_unit": "1/100 of each account currency",
+        "inventory_quantity_unit": "1/1000 of declared unit",
     }
     for model in models:
         data[model.__tablename__] = [serialize(r) for r in records(db, model, household_id)]
@@ -1158,6 +1165,8 @@ def household_delete(household_id: str, data: HouseholdInput, member: Membership
     paths = [storage_path(r.path) for r in records(db, Receipt, household_id)]
     # Delete in dependency order to preserve FK integrity.
     for model in [
+        ShoppingItem,
+        InventoryItem,
         BudgetSettlement,
         SurplusPolicy,
         ReviewTask,

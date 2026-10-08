@@ -18,6 +18,7 @@ Razem. to aplikacja do prywatnego budżetu gospodarstwa domowego. Dochód dostaj
 - **Budżet miesięczny** — nazwane źródła dochodu przypisane do domowników, kategorie, kwoty do przydzielenia i historia miesięcy. W edytorze możesz podejrzeć plan innego miesiąca i zastosować go do szkicu; kopiowanie nie powiela transakcji, a zapis chroni przed nadpisaniem równoczesnych zmian.
 - **Wydatki i wpływy** — szybkie wpisy, podział na kilka kategorii, historia, edycja zapisanych transakcji i transfery między kontami. Korekty aktualizują salda i budżet; równoczesne zmiany wymagają odświeżenia. Dla zatwierdzonego paragonu można zmienić opis i konto, a dane dokumentu pozostają spójne.
 - **Paragony z telefonu** — zdjęcie, OCR przez Gemini lub OpenAI, klasyfikacja każdej pozycji i przegląd niepewnych wyników. Błędy można poprawić; szkic zostaje zachowany.
+- **Zakupy i zapasy** — wspólna lista z ilościami i szacowanym kosztem, historia z ponownym dodaniem produktu, lodówka/zamrażarka/spiżarnia/szafka, terminy ważności i podpowiedzi brakujących zapasów. Produkty z zatwierdzonego paragonu można po sprawdzeniu ilości dodać do zapasów i odznaczyć na liście.
 - **Kieszonkowe** — po wypłacie prywatne zakupy nie wymagają rozliczania we wspólnym budżecie.
 - **Cele i stałe płatności** — oszczędności, miesięczne wpłaty, oczekiwane rachunki i prosta prognoza.
 - **Konta walutowe** — salda w PLN, EUR, USD, GBP i CHF; wspólna wycena w złotych po ostatnim opublikowanym kursie średnim NBP, z datą kursu.
@@ -27,6 +28,8 @@ Razem. to aplikacja do prywatnego budżetu gospodarstwa domowego. Dochód dostaj
 W Budżecie dodaj osobno np. wynagrodzenie Rocha, wynagrodzenie Kai i dodatkowe zlecenia. Każde źródło ma nazwę, osobę (lub „Wspólny dochód”) i kwotę. Suma zasila plan tego miesiąca; rzeczywisty wpływ zapisujesz osobno w transakcjach. Źródła można zmieniać i usuwać, a poprzednie miesiące zachowują własne plany. Istniejący pojedynczy dochód zostaje zachowany jako „Dochód wspólny”.
 
 Konto walutowe dodasz w „Konta → Dodaj konto”, wybierając walutę i saldo. Kursy odświeżają się automatycznie (cache do godziny); wycena nie jest kursem wykonania wymiany w banku. Przy awarii NBP widać ostatni pobrany kurs albo brak pełnej wyceny. Budżet, paragony i transakcje nadal prowadzicie na kontach PLN.
+
+W „Zakupy i zapasy” potwierdzenie „Kupione” zapisuje historię i opcjonalnie uzupełnia domowy zapas. Rzeczywisty wydatek wpisujesz osobno albo skanujesz paragon. W „Zapasy” zapisujesz zużycie, termin z opakowania i opcjonalne minimum; lista zakupów podpowie brakującą ilość. Import z paragonu dotyczy istniejącego wydatku i nie księguje go ponownie. Ilości są dokładnymi tysięcznymi wybranej jednostki; np. 0,5 kg i 500 g pozostają oddzielnymi wpisami.
 
 Kwoty są całkowitymi groszami (na kontach walutowych: setnymi częściami ich waluty). Podział transakcji musi odpowiadać jej sumie. Reguły klasyfikacji należą do konkretnego domu, a zdjęcia nie są publiczne ani przechowywane w cache PWA.
 

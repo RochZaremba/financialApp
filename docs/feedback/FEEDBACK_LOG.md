@@ -168,3 +168,20 @@ Status: discovery recorded; no application code or live bank connection changed.
 User clarification: mBank and Santander plus other accounts; currently for Roch and Kaja, potentially other users later. Begin provider eligibility checks with those banks and private linked-account testing; broader access and live PIS remain separate commercial/regulatory integration decisions. Confirm the exact Santander institution and each savings account's API capabilities before promising coverage.
 
 Further source verification: https://auth.enablebanking.com/guides/PL/ lists mBank and Santander Bank Polska. The linked-accounts documentation explicitly permits individual non-commercial use as well as evaluation; restricted mode is therefore not described as testing only. Verify terms for Kaja's separately owned accounts and any fees before selecting it for the household. https://enablebanking.com/docs/api/linked-accounts/ explains production registration, “Activate by linking accounts”, linked-account restrictions and the separate API authorization required afterward.
+
+
+# 2026-10-08 — Wspólne zakupy, zapasy i czytelna nawigacja
+
+Feedback: dodać planowanie zakupów w gospodarstwie, historię zakupów i aktualną lodówkę; poprawić nieczytelny i mało funkcjonalny panel nawigacji ze screena. Pracować przez branch/PR i feedback loop.
+
+Interpretation: shared persistent shopping list with quantities, estimated costs and category; explicit purchase confirmation feeds purchase history and optional home inventory. Inventory supports fridge/freezer/pantry/household cupboard, exact quantities, expiry dates, consumption and minimum-stock reminders. Low-stock and previously purchased products can be added to the list. Confirmed receipt items may be explicitly reviewed and imported to inventory/history once; no invented OCR quantities and no duplicate financial expense. Buying on the list is an inventory operation; expense/receipt entry stays explicit.
+
+Affected: new Zakupy screen (Lista, Zapasy, Historia), household authorization/persistence/export/deletion, confirmed receipt integration, desktop sidebar and mobile More/navigation.
+
+Acceptance: criteria below are added before implementation in ACCEPTANCE.md. Complete shared two-member persistence, editing/removal, exact quantity/money totals, atomic retry-safe purchase/import, foreign-household denial, clear empty/loading/error states, grouped scrollable sidebar with useful household/profile actions, four responsive viewports and two consecutive clean actual browser/visual loops. Branch `feat/household-shopping-navigation`, protected PR merge and existing merge-only delivery.
+
+Status: implementation in progress; no completed verification claimed.
+
+Implementation/verification (shopping/navigation): persistent shared list with quantity/category/estimate, atomic purchase history and optional stock, fridge/freezer/pantry/cupboard batches, consumption, expiry/minimum reminders and refill suggestions, paginated history with repeat, explicitly reviewed receipt import optionally completing a current list item. Sidebar now groups finances and household planning, removes the decorative filler and has actionable settings/member/logout controls; mobile More and the Add shortcut expose the feature. Shopping does not silently book an expense. Added migration 009, export/deletion and household-only authorization.
+
+Fixed actual loop defects: delayed prior command closing a newer editor (P1), clipped mobile location filter (P2), and history link alignment. Two subsequent clean loops each pass 9/9 Chromium desktop/mobile and WebKit scenarios with 96 screenshots and WCAG/overflow checks at the four required viewports. Full local regression: 131 API, 9 frontend and 20 deployment tests plus lint/typecheck/format/build. Evidence and visual findings: LOOP_LOG.md and `artifacts/shopping/`. Status: feature verified locally; protected PR #22 and existing merge-only delivery provide the hosted CI/release proof.

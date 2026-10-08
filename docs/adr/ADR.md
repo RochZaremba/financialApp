@@ -16,3 +16,4 @@ Accepted ADRs are binding unless superseded by a later ADR.
 - [ADR-012: Calendar schedules and reminders](ADR-012-recurring-calendar-schedules.md).
 - [ADR-013: Reviewed budget proposals](ADR-013-budget-proposals.md).
 - [ADR-014: Envelope surplus settlement](ADR-014-envelope-surplus-settlement.md).
+- [ADR-015: Household shopping and inventory](ADR-015-household-shopping-inventory.md).

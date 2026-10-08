@@ -34,6 +34,7 @@ import {
   Check,
   WifiOff,
   ShieldCheck,
+  ShoppingBasket,
   Leaf,
   ArrowRight,
 } from "lucide-react";
@@ -56,19 +57,20 @@ import {
   SettingsScreen,
   RecurringScreen,
 } from "./future-screens";
+import { ShoppingScreen } from "./shopping-screen";
 
 const nav = [
   { href: "/", label: "Pulpit", icon: House },
   { href: "/budzet", label: "Budżet", icon: Wallet },
   { href: "/transakcje", label: "Transakcje", icon: ArrowLeftRight },
+  { href: "/konta", label: "Konta", icon: Landmark },
   { href: "/cele", label: "Cele", icon: Flag },
   { href: "/analiza", label: "Analiza", icon: ChartNoAxesCombined },
-  { href: "/inbox", label: "Do sprawdzenia", icon: Inbox },
 ];
 const secondary = [
+  { href: "/zakupy", label: "Zakupy i zapasy", icon: ShoppingBasket },
   { href: "/cykliczne", label: "Stałe wydatki", icon: Repeat2 },
-  { href: "/konta", label: "Konta", icon: Landmark },
-  { href: "/ustawienia", label: "Ustawienia", icon: Settings },
+  { href: "/inbox", label: "Do sprawdzenia", icon: Inbox },
 ];
 function subscribeOnline(callback: () => void) {
   window.addEventListener("online", callback);
@@ -228,6 +230,11 @@ function Authenticated() {
     ? { me: auth.data, data, household, month, notify: setToast }
     : null;
   const memberName = auth.data.user.name;
+  const mobileSection = path.startsWith("/paragony/")
+    ? "/dodaj"
+    : ["/", "/budzet", "/dodaj", "/transakcje"].includes(path)
+      ? path
+      : "/wiecej";
   const content =
     path === "/" ? (
       <Home />
@@ -249,6 +256,8 @@ function Authenticated() {
       <SettingsScreen logout={logout} />
     ) : path === "/cykliczne" ? (
       <RecurringScreen />
+    ) : path === "/zakupy" ? (
+      <ShoppingScreen />
     ) : path === "/wiecej" ? (
       <MoreScreen />
     ) : path.startsWith("/paragony/") ? (
@@ -273,60 +282,59 @@ function Authenticated() {
           </span>
           razem<span className="brand-dot">.</span>
         </Link>
-        <div className="sidebar-label">TWÓJ DOM, TWÓJ PLAN</div>
-        <nav aria-label="Nawigacja główna">
-          {nav.map(({ href, label, icon: Icon }) => (
-            <Link
-              href={href}
-              key={href}
-              className={path === href ? "nav-item active" : "nav-item"}
-              aria-current={path === href ? "page" : undefined}
-            >
-              <Icon size={20} strokeWidth={1.7} />
-              {label}
-              {href === "/inbox" && !!data?.tasks.length && (
-                <span className="nav-count">{data.tasks.length}</span>
-              )}
-            </Link>
+        <Link className="button secondary sidebar-add" href="/dodaj">
+          <Plus size={18} />
+          Dodaj
+        </Link>
+        <div className="sidebar-navigation">
+          {[
+            { label: "Finanse", items: nav },
+            { label: "Planowanie domu", items: secondary },
+          ].map((group) => (
+            <nav key={group.label} aria-label={group.label}>
+              <div className="sidebar-label">{group.label}</div>
+              {group.items.map(({ href, label, icon: Icon }) => (
+                <Link
+                  href={href}
+                  key={href}
+                  className={path === href ? "nav-item active" : "nav-item"}
+                  aria-current={path === href ? "page" : undefined}
+                >
+                  <Icon size={20} strokeWidth={1.7} />
+                  {label}
+                  {href === "/inbox" && !!data?.tasks.length && (
+                    <span className="nav-count">{data.tasks.length}</span>
+                  )}
+                </Link>
+              ))}
+            </nav>
           ))}
-        </nav>
-        <div className="nav-separator" />
-        <nav aria-label="Pozostałe obszary">
-          {secondary.map(({ href, label, icon: Icon }) => (
-            <Link
-              href={href}
-              key={href}
-              className={path === href ? "nav-item active" : "nav-item"}
-              aria-current={path === href ? "page" : undefined}
-            >
-              <Icon size={20} strokeWidth={1.7} />
-              {label}
-            </Link>
-          ))}
-        </nav>
+        </div>
         <div className="sidebar-bottom">
-          <div className="shared-note">
-            <Leaf size={19} />
-            <div>
-              Małe kroki.
-              <br />
-              <strong>Spokojna przyszłość.</strong>
-            </div>
-          </div>
-          <div className="profile">
+          <Link
+            href="/ustawienia"
+            className={`nav-item ${path === "/ustawienia" ? "active" : ""}`}
+            aria-current={path === "/ustawienia" ? "page" : undefined}
+          >
+            <Settings size={19} />
+            Ustawienia domu
+          </Link>
+          <Link
+            href="/ustawienia"
+            className="profile"
+            aria-label={`Domownicy i ustawienia: ${memberName}`}
+          >
             <span className="avatar">{memberName.slice(0, 1)}</span>
             <div>
               <strong>{memberName}</strong>
               <small>{data?.household.name || "Twój dom"}</small>
             </div>
-            <button
-              className="icon-button"
-              aria-label="Wyloguj"
-              onClick={logout}
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
+            <ArrowRight size={16} />
+          </Link>
+          <button className="sidebar-logout" onClick={logout}>
+            <LogOut size={17} />
+            Wyloguj
+          </button>
         </div>
       </aside>
       <div className="workspace">
@@ -374,43 +382,45 @@ function Authenticated() {
         </header>
         <main id="main" tabIndex={-1} className="main-content">
           <ErrorMessage error={logoutError} />
-          <div className="month-row">
-            <span className="eyebrow">
-              {path === "/" ? "DOMOWE FINANSE" : "WSPÓLNY PLAN"}
-            </span>
-            <div className="month-picker">
-              <button
-                className="icon-button"
-                aria-label="Poprzedni miesiąc"
-                disabled={month === "2000-01"}
-                onClick={() => setMonth(shiftMonth(month, -1))}
-              >
-                <ChevronLeft size={17} />
-              </button>
-              <label>
-                <span className="sr-only">Miesiąc budżetu</span>
-                <input
-                  type="month"
-                  value={month}
-                  min="2000-01"
-                  max="2100-12"
-                  onChange={(e) => {
-                    if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value))
-                      setMonth(e.target.value);
-                  }}
-                />
-                <span aria-hidden="true">{monthName(month)}</span>
-              </label>
-              <button
-                className="icon-button"
-                aria-label="Następny miesiąc"
-                disabled={month === "2100-12"}
-                onClick={() => setMonth(shiftMonth(month, 1))}
-              >
-                <ChevronRight size={17} />
-              </button>
+          {path !== "/zakupy" && (
+            <div className="month-row">
+              <span className="eyebrow">
+                {path === "/" ? "DOMOWE FINANSE" : "WSPÓLNY PLAN"}
+              </span>
+              <div className="month-picker">
+                <button
+                  className="icon-button"
+                  aria-label="Poprzedni miesiąc"
+                  disabled={month === "2000-01"}
+                  onClick={() => setMonth(shiftMonth(month, -1))}
+                >
+                  <ChevronLeft size={17} />
+                </button>
+                <label>
+                  <span className="sr-only">Miesiąc budżetu</span>
+                  <input
+                    type="month"
+                    value={month}
+                    min="2000-01"
+                    max="2100-12"
+                    onChange={(e) => {
+                      if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value))
+                        setMonth(e.target.value);
+                    }}
+                  />
+                  <span aria-hidden="true">{monthName(month)}</span>
+                </label>
+                <button
+                  className="icon-button"
+                  aria-label="Następny miesiąc"
+                  disabled={month === "2100-12"}
+                  onClick={() => setMonth(shiftMonth(month, 1))}
+                >
+                  <ChevronRight size={17} />
+                </button>
+              </div>
             </div>
-          </div>
+          )}
           {overview.isPending ? (
             <Skeleton />
           ) : overview.isError ? (
@@ -451,8 +461,14 @@ function Authenticated() {
           <Link
             key={href}
             href={href}
-            className={`${path === href ? "active" : ""} ${href === "/dodaj" ? "central-add" : ""}`}
-            aria-current={path === href ? "page" : undefined}
+            className={`${mobileSection === href ? "active" : ""} ${href === "/dodaj" ? "central-add" : ""}`}
+            aria-current={
+              path === href
+                ? "page"
+                : mobileSection === href
+                  ? "location"
+                  : undefined
+            }
           >
             <span>
               <Icon size={22} strokeWidth={1.8} />

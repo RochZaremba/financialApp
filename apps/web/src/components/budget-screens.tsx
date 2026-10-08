@@ -20,6 +20,7 @@ import {
   Repeat2,
   CircleCheck,
   Trash2,
+  ShoppingBasket,
 } from "lucide-react";
 import { api, json } from "@/lib/api";
 import {
@@ -1452,6 +1453,12 @@ export function MoreScreen() {
       />
       <Card className="more-list">
         {[
+          {
+            href: "/zakupy",
+            label: "Zakupy i zapasy",
+            desc: "Wspólna lista, lodówka i historia zakupów",
+            icon: ShoppingBasket,
+          },
           {
             href: "/cele",
             label: "Cele oszczędnościowe",
