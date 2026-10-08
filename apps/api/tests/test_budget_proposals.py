@@ -76,7 +76,7 @@ def test_unavailable_invalid_ids_and_overcommitted_budget(client, household, mon
     assert client.post(url, json=data).status_code == 404
 
 
-@pytest.mark.parametrize("defect", ["wrong_total", "foreign_category", "duplicate"])
+@pytest.mark.parametrize("defect", ["wrong_total", "foreign_category", "duplicate", "below_recurring"])
 def test_model_output_is_never_trusted_or_saved(client, household, monkeypatch, defect):
     rows = [ProposedCategory(category_id=c["id"], amount=0, reason="Propozycja") for c in household["data"]["categories"]]
     rows[0].amount = 80001
@@ -84,6 +84,16 @@ def test_model_output_is_never_trusted_or_saved(client, household, monkeypatch, 
         rows[0].amount = 80000
     elif defect == "foreign_category":
         rows[0].category_id = str(uuid4())
+    elif defect == "below_recurring":
+        rows[0].amount = 0
+        rows[1].amount = 80001
+        client.post(
+            household["path"] + "/recurring",
+            json=dict(
+                name="Czynsz", day=1, amount=30000, category_id=rows[0].category_id, account_id=household["data"]["accounts"][0]["id"]
+            ),
+            headers={"Idempotency-Key": str(uuid4())},
+        )
     else:
         rows.append(rows[0])
     monkeypatch.setattr("app.planning.ai_proposal", lambda _: Proposal(summary="AI", assumptions=["Sprawdź"], allocations=rows))
