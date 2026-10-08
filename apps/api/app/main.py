@@ -280,12 +280,28 @@ def budget_read(household_id: str, month: str, member: Membership, db: Db):
 
 
 @app.put("/households/{household_id}/budget/{month}")
-def budget_save(household_id: str, month: str, data: BudgetInput, member: Membership, db: Db):
+def budget_save(
+    household_id: str,
+    month: str,
+    data: BudgetInput,
+    member: Membership,
+    db: Db,
+    key: Annotated[str | None, Header(alias="Idempotency-Key", min_length=8, max_length=100)] = None,
+):
     month_valid(month)
     db.scalar(select(Household).where(Household.id == household_id).with_for_update())
     if len({(a.kind, a.reference_id) for a in data.allocations}) != len(data.allocations):
         raise HTTPException(422, "Powtórzona pozycja budżetu.")
+    signature = fingerprint("budget.save:" + month, data.model_dump(mode="json"))
+    if key:
+        previous = db.scalar(select(Mutation).where(Mutation.household_id == household_id, Mutation.key == key))
+        if previous:
+            if previous.request_hash != signature:
+                raise HTTPException(409, "Ten zapis już istnieje z innymi danymi. Odśwież formularz.")
+            return budget_data(db, household_id, month)
     period = db.scalar(select(Period).where(Period.household_id == household_id, Period.month == month))
+    if "expected_updated_at" in data.model_fields_set and data.expected_updated_at != (period.updated_at if period else None):
+        raise HTTPException(409, "Ten plan został zmieniony. Odśwież stronę przed ponownym zapisem.")
     if not period:
         period = Period(household_id=household_id, month=month, created_by=member.user_id)
         db.add(period)
@@ -329,6 +345,7 @@ def budget_save(household_id: str, month: str, data: BudgetInput, member: Member
                     )
                 )
     period.updated_by = member.user_id
+    period.updated_at = datetime.now(timezone.utc)
     keep = set()
     for entry in data.allocations:
         if entry.kind == "category":
@@ -363,9 +380,49 @@ def budget_save(household_id: str, month: str, data: BudgetInput, member: Member
     for pair, allocation in old.items():
         if pair not in keep:
             db.delete(allocation)
+    if key:
+        db.add(
+            Mutation(
+                household_id=household_id,
+                key=key,
+                resource="budget.save",
+                request_hash=signature,
+                entity_id=period.id,
+                created_by=member.user_id,
+            )
+        )
     audit(db, member, "budget.saved", period.id)
     db.commit()
     return budget_data(db, household_id, month)
+
+
+@app.get("/households/{household_id}/budget/{month}/copy-preview")
+def budget_copy_preview(household_id: str, month: str, source_month: str, member: Membership, db: Db):
+    month_valid(month)
+    month_valid(source_month)
+    if source_month == month:
+        raise HTTPException(422, "Wybierz inny miesiąc do skopiowania.")
+    source = budget_data(db, household_id, source_month)
+    if not source["period"]:
+        raise HTTPException(404, "W tym miesiącu nie ma jeszcze planu.")
+    active = {("category", c.id) for c in records(db, Category, household_id) if not c.archived}
+    active |= {("pocket", m.id) for m in records(db, Member, household_id)}
+    active |= {("goal", g.id) for g in records(db, Goal, household_id)}
+    allocations, omitted = [], []
+    for row in source["allocations"]:
+        if row["id"].startswith("actual-"):
+            continue
+        if (row["kind"], row["reference_id"]) not in active:
+            omitted.append(row["label"])
+        else:
+            allocations.append({k: row[k] for k in ("kind", "reference_id", "amount", "label")})
+    return dict(
+        source_month=source_month,
+        planned_income=source["planned_income"],
+        income_sources=[{k: row[k] for k in ("name", "member_id", "amount")} for row in source["income_sources"]],
+        allocations=allocations,
+        omitted=omitted,
+    )
 
 
 @app.post("/households/{household_id}/categories", status_code=201)
