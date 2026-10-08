@@ -55,6 +55,8 @@ export type Allocation = {
   amount: number;
   spent: number;
   remaining: number;
+  carry_in?: number;
+  reserved_out?: number;
 };
 export type IncomeSource = {
   id: string;
@@ -63,6 +65,11 @@ export type IncomeSource = {
   amount: number;
 };
 export type Budget = {
+  available: number;
+  carry_in: number;
+  carry_out: number;
+  distributed_out: number;
+  settlement: import("@/components/surplus").Settlement | null;
   period: { id: string; updated_at: string } | null;
   month: string;
   planned_income: number;

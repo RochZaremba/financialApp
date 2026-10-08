@@ -112,6 +112,9 @@ def pln_account(db, household_id, account_id):
 
 
 def validate_transaction(db, member, data, *, existing=None):
+    from .settlements import ensure_open
+
+    ensure_open(db, member.household_id, data.date.strftime("%Y-%m"))
     pln_account(db, member.household_id, data.account_id)
     if data.date.year < 2000 or data.date.year > 2100:
         raise HTTPException(422, "Wybierz datę pomiędzy 2000 a 2100 rokiem.")
@@ -213,7 +216,24 @@ def transaction_data(db, tx):
 
 
 def budget_data(db, household_id, month):
+    from .models import BudgetSettlement
+
     start, end = month_dates(month)
+    settlements = list(
+        db.scalars(
+            select(BudgetSettlement).where(
+                BudgetSettlement.household_id == household_id,
+                (BudgetSettlement.source_month == month) | (BudgetSettlement.target_month == month),
+            )
+        )
+    )
+    closed = next((s.result for s in settlements if s.source_month == month), None)
+    incoming = next((s.result for s in settlements if s.target_month == month and s.result["mode"] == "carry"), None)
+    carry = {r["category_id"]: r for r in incoming["envelopes"]} if incoming else {}
+    outgoing = {r["category_id"]: r["amount"] for r in closed["envelopes"]} if closed else {}
+    carry_in = incoming["total"] if incoming else 0
+    carry_out = closed["total"] if closed and closed["mode"] == "carry" else 0
+    distributed = closed["total"] if closed and closed["mode"] == "distribute" else 0
     period = db.scalar(select(Period).where(Period.household_id == household_id, Period.month == month))
     txs = list(
         db.scalars(select(Transaction).where(Transaction.household_id == household_id, Transaction.date >= start, Transaction.date <= end))
@@ -240,7 +260,7 @@ def budget_data(db, household_id, month):
                 unallocated += tx.amount
         elif tx.kind == "pocket":
             used[("pocket", tx.member_id)] += tx.amount
-        elif tx.kind == "saving":
+        elif tx.kind == "saving" and tx.source != "surplus":
             used[("goal", tx.goal_id)] += tx.amount
     allocations = []
     seen = set()
@@ -248,9 +268,29 @@ def budget_data(db, household_id, month):
         for a in db.scalars(select(BudgetAllocation).where(BudgetAllocation.period_id == period.id)):
             data = serialize(a)
             data["spent"] = used[(a.kind, a.reference_id)]
-            data["remaining"] = a.amount - data["spent"]
+            data["carry_in"] = carry.get(a.reference_id, {}).get("amount", 0) if a.kind == "category" else 0
+            data["reserved_out"] = outgoing.get(a.reference_id, 0) if a.kind == "category" else 0
+            data["remaining"] = a.amount + data["carry_in"] - data["spent"] - data["reserved_out"]
             allocations.append(data)
             seen.add((a.kind, a.reference_id))
+    for reference, row in carry.items():
+        if ("category", reference) not in seen:
+            spent = used[("category", reference)]
+            allocations.append(
+                dict(
+                    id=f"carry-{reference}",
+                    kind="category",
+                    reference_id=reference,
+                    label=row["label"],
+                    group=row["group"],
+                    amount=0,
+                    spent=spent,
+                    carry_in=row["amount"],
+                    reserved_out=outgoing.get(reference, 0),
+                    remaining=row["amount"] - spent - outgoing.get(reference, 0),
+                )
+            )
+            seen.add(("category", reference))
     # Actual spending remains visible even if that envelope was not planned.
     for (kind, reference), amount in used.items():
         if (kind, reference) in seen:
@@ -298,10 +338,15 @@ def budget_data(db, household_id, month):
     assigned = sum(a["amount"] for a in allocations)
     expenses = sum(t.amount for t in txs if t.kind == "expense")
     pocket = sum(t.amount for t in txs if t.kind == "pocket")
-    savings = sum(t.amount for t in txs if t.kind == "saving")
+    savings = sum(t.amount for t in txs if t.kind == "saving" and t.source != "surplus") + distributed
     return dict(
         period=serialize(period) if period else None,
         month=month,
+        available=planned + carry_in,
+        carry_in=carry_in,
+        carry_out=carry_out,
+        distributed_out=distributed,
+        settlement=closed,
         planned_income=planned,
         income_sources=sources,
         assigned=assigned,
@@ -311,7 +356,7 @@ def budget_data(db, household_id, month):
         pocket=pocket,
         savings=savings,
         income=sum(t.amount for t in txs if t.kind == "income"),
-        remaining=planned - expenses - pocket - savings,
+        remaining=planned + carry_in - expenses - pocket - savings - carry_out,
         unallocated=unallocated,
         allocations=allocations,
     )

@@ -48,6 +48,7 @@ import {
 
 import { ManualTransaction, type MovementKind } from "./movement-form";
 import { MonthCopy } from "./month-copy";
+import { Surplus } from "./surplus";
 
 function pendingText(count: number) {
   if (count === 1) return "1 sprawa czeka";
@@ -102,10 +103,14 @@ function Envelope({ a, data }: { a: Allocation; data: Overview }) {
             {money(Math.abs(a.remaining))}
           </span>
         </div>
-        <Progress value={a.spent} total={a.amount} color={category?.color} />
+        <Progress
+          value={a.spent}
+          total={a.amount + (a.carry_in || 0)}
+          color={category?.color}
+        />
         <div className="envelope-meta">
           <span>{money(a.spent)} wykorzystane</span>
-          <span>z {money(a.amount)}</span>
+          <span>z {money(a.amount + (a.carry_in || 0))}</span>
         </div>
       </div>
     </div>
@@ -150,16 +155,16 @@ export function Home() {
             <div className="balance-top">
               <span className="eyebrow">POZOSTAŁO W TYM MIESIĄCU</span>
               <span
-                className={`pill ${b.planned_income > 0 && b.unassigned === 0 ? "positive" : b.unassigned < 0 ? "warning" : "neutral"}`}
+                className={`pill ${b.available > 0 && b.unassigned === 0 ? "positive" : b.unassigned < 0 ? "warning" : "neutral"}`}
               >
-                {b.planned_income > 0 && b.unassigned === 0 ? (
+                {b.available > 0 && b.unassigned === 0 ? (
                   <>
                     <Check size={13} />
                     Plan gotowy
                   </>
                 ) : b.unassigned < 0 ? (
                   "Plan przekracza dochód"
-                ) : b.planned_income === 0 ? (
+                ) : b.available === 0 ? (
                   "Uzupełnij dochód"
                 ) : (
                   <>Do podziału {money(b.unassigned, false)}</>
@@ -172,24 +177,30 @@ export function Home() {
               {money(b.remaining)}
               <span>na Wasz wspólny plan</span>
             </div>
-            <Progress value={b.spent} total={b.planned_income} />
+            <Progress value={b.spent + b.carry_out} total={b.available} />
             <div className="balance-stats">
               <div>
                 <span>Wykorzystano</span>
                 <strong>{money(b.spent)}</strong>
               </div>
               <div>
-                <span>Zaplanowano</span>
-                <strong>{money(b.planned_income)}</strong>
+                <span>Dostępne w planie</span>
+                <strong>{money(b.available)}</strong>
               </div>
               <span className="balance-percent">
-                {b.planned_income
-                  ? Math.round((b.spent / b.planned_income) * 100)
+                {b.available
+                  ? Math.round(((b.spent + b.carry_out) / b.available) * 100)
                   : 0}
                 % planu
               </span>
             </div>
             <div className="balance-footnote">
+              {!!b.carry_in && (
+                <>Z poprzedniego miesiąca: {money(b.carry_in)}. </>
+              )}
+              {!!b.carry_out && (
+                <>Do kolejnego miesiąca: {money(b.carry_out)}. </>
+              )}
               W tym {money(b.savings, false)} odłożone i{" "}
               {money(b.pocket, false)} kieszonkowego.
             </div>
@@ -406,7 +417,7 @@ export function BudgetScreen() {
         title="Wasz plan na miesiąc."
         description="Na to, co potrzebne. Na przyjemności. Na przyszłość."
         action={
-          b.period && !editing ? (
+          b.period && !editing && !b.settlement ? (
             <button
               className="button secondary"
               onClick={() => setEditing(true)}
@@ -417,6 +428,7 @@ export function BudgetScreen() {
           ) : undefined
         }
       />
+      {b.period && !editing && <Surplus key={month} />}
       {editing || !b.period ? (
         <BudgetEditor key={month} close={() => setEditing(false)} />
       ) : (
@@ -426,10 +438,13 @@ export function BudgetScreen() {
               <span className="eyebrow">PLANOWANY DOCHÓD</span>
               <strong>{money(b.planned_income)}</strong>
               <small>Wspólna pula na ten miesiąc</small>
+              {!!b.carry_in && (
+                <small>+ {money(b.carry_in)} z poprzedniego miesiąca</small>
+              )}
             </Card>
             <Card
               className={
-                b.planned_income > 0 && b.unassigned === 0 ? "zero-card" : ""
+                b.available > 0 && b.unassigned === 0 ? "zero-card" : ""
               }
             >
               <span className="eyebrow">
@@ -441,12 +456,12 @@ export function BudgetScreen() {
                 {money(b.unassigned)}
               </strong>
               <small>
-                {b.planned_income > 0 && b.unassigned === 0 ? (
+                {b.available > 0 && b.unassigned === 0 ? (
                   <>
                     <Check size={14} />
                     Wszystko ma swoje miejsce
                   </>
-                ) : b.planned_income === 0 ? (
+                ) : b.available === 0 ? (
                   "Dodaj źródła dochodu"
                 ) : (
                   "Dostosuj kwoty w planie"
@@ -528,7 +543,7 @@ export function BudgetScreen() {
                             <strong>{a.label}</strong>
                             <Progress
                               value={a.spent}
-                              total={a.amount}
+                              total={a.amount + (a.carry_in || 0)}
                               color={category?.color}
                             />
                           </div>
@@ -536,6 +551,12 @@ export function BudgetScreen() {
                         <div>
                           <small>Plan</small>
                           <Amount value={a.amount} />
+                          {!!a.carry_in && (
+                            <small>Z poprzedniego: {money(a.carry_in)}</small>
+                          )}
+                          {!!a.reserved_out && (
+                            <small>Rozliczono: {money(a.reserved_out)}</small>
+                          )}
                         </div>
                         <div>
                           <small>Wykorzystano</small>
@@ -549,24 +570,28 @@ export function BudgetScreen() {
                               a.remaining < 0 ? "negative" : "positive-text"
                             }
                           />
-                          {a.kind === "pocket" && a.spent < a.amount && (
-                            <Link
-                              href={`/dodaj?type=pocket&member=${a.reference_id}`}
-                              className="small-link"
-                            >
-                              Wypłać
-                              <ArrowUpRight size={13} />
-                            </Link>
-                          )}
-                          {a.kind === "goal" && a.spent < a.amount && (
-                            <Link
-                              href={`/dodaj?type=saving&goal=${a.reference_id}`}
-                              className="small-link"
-                            >
-                              Odłóż
-                              <ArrowUpRight size={13} />
-                            </Link>
-                          )}
+                          {!b.settlement &&
+                            a.kind === "pocket" &&
+                            a.spent < a.amount && (
+                              <Link
+                                href={`/dodaj?type=pocket&member=${a.reference_id}`}
+                                className="small-link"
+                              >
+                                Wypłać
+                                <ArrowUpRight size={13} />
+                              </Link>
+                            )}
+                          {!b.settlement &&
+                            a.kind === "goal" &&
+                            a.spent < a.amount && (
+                              <Link
+                                href={`/dodaj?type=saving&goal=${a.reference_id}`}
+                                className="small-link"
+                              >
+                                Odłóż
+                                <ArrowUpRight size={13} />
+                              </Link>
+                            )}
                         </div>
                       </div>
                     );
@@ -714,6 +739,12 @@ function BudgetEditor({ close }: { close: () => void }) {
           );
         }}
       />
+      {!!b.carry_in && (
+        <p className="notice">
+          W kopertach jest już {money(b.carry_in)} z poprzedniego miesiąca.
+          Przydzielasz tylko nowy dochód.
+        </p>
+      )}
       <Card className="income-plan">
         <div className="income-heading">
           <div>
@@ -864,6 +895,13 @@ function BudgetEditor({ close }: { close: () => void }) {
                 </div>
                 <MoneyField
                   label={`${a.label} — plan (zł)`}
+                  hint={
+                    b.allocations.find(
+                      (row) => row.reference_id === a.reference_id,
+                    )?.carry_in
+                      ? `Z poprzedniego miesiąca: ${money(b.allocations.find((row) => row.reference_id === a.reference_id)!.carry_in!)} już w kopercie.`
+                      : undefined
+                  }
                   value={values[a.reference_id] || "0,00"}
                   onChange={(e) =>
                     setValues({ ...values, [a.reference_id]: e.target.value })
@@ -1000,10 +1038,12 @@ export function TransactionRows({
                   <ArrowRight size={16} />
                 </Link>
               )}
-              <Link className="text-button" href={`/transakcje?edit=${t.id}`}>
-                <Pencil size={16} />
-                Edytuj transakcję
-              </Link>
+              {t.source !== "surplus" && (
+                <Link className="text-button" href={`/transakcje?edit=${t.id}`}>
+                  <Pencil size={16} />
+                  Edytuj transakcję
+                </Link>
+              )}
               {t.status === "unallocated" && (
                 <CategorizeTransaction transaction={t} />
               )}
