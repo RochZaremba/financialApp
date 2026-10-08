@@ -112,3 +112,5 @@ docs/adr/       decyzje architektoniczne
 - [Kryteria jakości](docs/quality/ACCEPTANCE.md) · [przebiegi review](docs/quality/LOOP_LOG.md)
 
 To aplikacja do domowego budżetu. V1 nie obejmuje PSD2, automatycznego importu bankowego ani księgowości podatkowej.
+
+Stałe płatności obsługują cykle tygodniowe, miesięczne, kwartalne i roczne oraz przypomnienia 0–30 dni przed terminem. Potwierdzenie zapisuje jeden wydatek dla wybranego terminu. W widoku Stałe wydatki można pobrać prywatny kalendarz z alarmami na najbliższy rok; po zmianie harmonogramu należy go ponownie zaimportować. Przypomnienia w aplikacji nie wymagają włączonych powiadomień systemowych.

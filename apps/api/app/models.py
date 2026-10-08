@@ -142,10 +142,18 @@ class Recurring(Scoped, Base):
     name: Mapped[str] = mapped_column(String(120))
     amount: Mapped[int] = mapped_column(BigInteger)
     day: Mapped[int] = mapped_column(Integer)
+    frequency: Mapped[str] = mapped_column(String(12), default="monthly", server_default="monthly")
+    start_date: Mapped[DateValue | None] = mapped_column(Date, nullable=True)
+    reminder_days: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
     category_id: Mapped[str] = mapped_column(ForeignKey("categories.id"))
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    __table_args__ = (CheckConstraint("amount > 0 and day between 1 and 31"),)
+    __table_args__ = (
+        CheckConstraint("amount > 0 and day between 1 and 31"),
+        CheckConstraint("frequency in ('weekly','monthly','quarterly','yearly')", name="recurring_frequency"),
+        CheckConstraint("reminder_days between 0 and 30", name="recurring_reminder_days"),
+        CheckConstraint("frequency = 'monthly' or start_date is not null", name="recurring_anchor"),
+    )
 
 
 class Transaction(Scoped, Base):

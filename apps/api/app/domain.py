@@ -357,24 +357,14 @@ def goal_data(db, household_id):
 
 
 def recurring_data(db, household_id, month):
+    from .schedules import period_rows
+
     start, end = month_dates(month)
-    result = []
-    for row in records(db, Recurring, household_id):
-        paid = db.scalar(
-            select(Transaction.id).where(
-                Transaction.household_id == household_id,
-                Transaction.source == "recurring",
-                Transaction.source_id == row.id,
-                Transaction.date >= start,
-                Transaction.date <= end,
-            )
-        )
-        result.append(dict(**serialize(row), paid=bool(paid), due_date=date(start.year, start.month, min(row.day, end.day)).isoformat()))
-    return result
+    return period_rows(db, household_id, records(db, Recurring, household_id), start, end, today())
 
 
 def fingerprint(resource, data):
-    return hashlib.sha256(json.dumps({"resource": resource, "data": data}, sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(json.dumps({"resource": resource, "data": data}, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def create_record(db, member, model, data, key):

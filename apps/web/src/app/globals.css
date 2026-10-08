@@ -4105,4 +4105,29 @@ select:focus-visible {
 .copy-preview .income-source-summary {
   gap: 16px;
   flex-wrap: wrap;
+.reminder-panel {
+  margin: 24px 0;
+}
+.reminder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+.reminder-row > div {
+  min-width: 0;
+}
+.reminder-row strong {
+  overflow-wrap: anywhere;
+}
+.reminder-row p {
+  margin: 6px 0;
+}
+@media (max-width: 600px) {
+  .reminder-row {
+    align-items: start;
+    flex-direction: column;
+  }
 }
