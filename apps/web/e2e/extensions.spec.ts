@@ -142,9 +142,7 @@ test("review a complete budget proposal and apply it only to the draft", async (
   const { route, data, name } = await household(page, info);
   await page.goto("/budzet");
   await page.getByLabel("Kwota źródła 1 (zł)", { exact: true }).fill("1000,01");
-  await page
-    .getByLabel(`${data.members[0].name} — plan (zł)`)
-    .fill("200");
+  await page.getByLabel(`${data.members[0].name} — plan (zł)`).fill("200");
   await page.getByText("Pomóż mi rozdzielić budżet", { exact: true }).click();
   await page
     .getByRole("button", { name: "Na podstawie historii", exact: true })
@@ -165,6 +163,7 @@ test("review a complete budget proposal and apply it only to the draft", async (
     page.getByLabel(`${data.members[0].name} — plan (zł)`),
   ).toHaveValue("200");
   await page.getByRole("button", { name: "Zapisz plan miesiąca" }).click();
+  await expect(page.getByRole("button", { name: "Edytuj plan" })).toBeVisible();
   const saved = await page.request
     .get(`${route}/budget/2026-10`)
     .then((r) => r.json());
