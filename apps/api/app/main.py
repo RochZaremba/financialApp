@@ -13,13 +13,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .admin import router as admin_router
 from .db import get_db
 from .domain import (
     account_data,
     pln_account,
     audit,
     budget_data,
-    classify,
     create_transaction,
     create_record,
     fingerprint,
@@ -67,6 +67,7 @@ from .models import (
     Period,
     Receipt,
     ReceiptItem,
+    ReceiptOCRAttempt,
     Recurring,
     ReviewTask,
     SessionToken,
@@ -76,7 +77,8 @@ from .models import (
 )
 from .schedules import occurrence_dates, calendar_text, reminders
 from .shopping import router as shopping_router
-from .receipts import MAX_IMAGE_BYTES, provider, storage_path, validated_image
+from .receipts import MAX_IMAGE_BYTES, storage_path, validated_image
+from .ocr import run_extraction
 from .schemas import (
     AccountInput,
     BudgetInput,
@@ -87,6 +89,7 @@ from .schemas import (
     HouseholdInput,
     JoinInput,
     DraftReceiptInput,
+    OCRApplyInput,
     RecurringInput,
     SplitInput,
     TransactionInput,
@@ -99,6 +102,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Dom · budżet domowy", version="1.0.0")
 app.add_middleware(RequestBodyLimit)
 app.include_router(shopping_router)
+app.include_router(admin_router)
 Db = Annotated[Session, Depends(get_db)]
 Person = Annotated[User, Depends(current_user)]
 Membership = Annotated[Member, Depends(household_member)]
@@ -160,7 +164,7 @@ def register(data: Credentials, request: Request, response: Response, db: Db):
 def login(data: Credentials, request: Request, response: Response, db: Db):
     rate_limit(f"login:{data.email}", 15)
     rate_limit(f"login-ip:{request.client.host}", 120)
-    user = db.scalar(select(User).where(User.email == data.email))
+    user = db.scalar(select(User).where(User.email == data.email).with_for_update())
     correct = hasher.verify(data.password, user.password_hash if user else DUMMY_HASH)
     if not user or not correct:
         raise HTTPException(401, "Nieprawidłowy e-mail lub hasło.")
@@ -773,8 +777,22 @@ def recurring_calendar(household_id: str, member: Membership, db: Db):
 
 
 def receipt_data(db, receipt):
+    attempts = list(
+        db.scalars(
+            select(ReceiptOCRAttempt)
+            .where(ReceiptOCRAttempt.receipt_id == receipt.id, ReceiptOCRAttempt.household_id == receipt.household_id)
+            .order_by(ReceiptOCRAttempt.created_at.desc(), ReceiptOCRAttempt.id.desc())
+            .limit(10)
+        )
+    )
     return dict(
         **serialize(receipt),
+        ocr_attempts=[
+            dict(
+                **{k: v for k, v in serialize(attempt).items() if k not in ("key", "result")}, result=attempt.result if index == 0 else None
+            )
+            for index, attempt in enumerate(attempts)
+        ],
         items=[
             serialize(i)
             for i in db.scalars(
@@ -815,7 +833,6 @@ def receipt_upload(
         image = validated_image(raw)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    categories = [dict(id=c.id, name=c.name, group=c.group) for c in records(db, Category, household_id) if not c.archived]
     filename = secrets.token_hex(24) + ".png"
     destination = storage_path(filename)
     destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -831,62 +848,22 @@ def receipt_upload(
             provider=settings.receipt_provider,
         )
         db.add(receipt)
-        try:
-            extraction = provider().extract(raw if settings.receipt_provider == "fixture" else image, categories)
-        except Exception as exc:
-            logger.warning(
-                "Receipt extraction failed (provider=%s, kind=%s, status=%s)",
-                settings.receipt_provider,
-                type(exc).__name__,
-                getattr(getattr(exc, "response", None), "status_code", None),
-            )
-            # Only external extraction failure becomes a recoverable draft.
-            # Database failures must roll back, never masquerade as OCR failures.
-            extraction = None
-        complete, ambiguous = False, False
-        if extraction is None:
+        db.flush()
+        attempt, ambiguous = run_extraction(
+            db, receipt, member, raw if settings.receipt_provider == "fixture" else image, key or secrets.token_hex(24)
+        )
+        if attempt.result is not None:
+            attempt.applied_at = datetime.now(timezone.utc)
+        complete = attempt.status == "succeeded"
+        if attempt.result is None:
             receipt.status = "failed"
-            receipt.error = "Odczyt się nie powiódł. Zdjęcie jest zapisane — uzupełnij dane ręcznie."
+            receipt.error = attempt.diagnostics["message"][:300]
         else:
-            if settings.receipt_provider == "fixture" and not extraction.items:
+            if settings.receipt_provider == "fixture" and not attempt.result["items"]:
                 receipt.provider = "manual"
-            receipt.merchant, receipt.date, receipt.total = extraction.merchant, extraction.date, extraction.total
-            valid_ids = {c["id"] for c in categories}
-            rules = records(db, ClassificationRule, household_id)
-            category_totals = defaultdict(int)
-            db.flush()
-            for index, item in enumerate(extraction.items):
-                category_id, confidence = classify(db, household_id, item.name, extraction.merchant, rules=rules, active=valid_ids)
-                if not category_id:
-                    category_id, confidence = (item.category_id, item.confidence) if item.category_id in valid_ids else (None, 0)
-                if category_id and item.amount is not None:
-                    category_totals[category_id] += item.amount
-                ambiguous |= category_id is None or confidence < round(settings.classification_review_threshold * 100)
-                db.add(
-                    ReceiptItem(
-                        household_id=household_id,
-                        receipt_id=receipt.id,
-                        name=item.name,
-                        quantity=item.quantity or "",
-                        amount=item.amount,
-                        category_id=category_id,
-                        confidence=confidence,
-                        position=index,
-                        created_by=member.user_id,
-                    )
-                )
-            ambiguous |= any(amount < 0 for amount in category_totals.values())
-            complete = bool(
-                extraction.merchant
-                and extraction.date
-                and extraction.total
-                and extraction.items
-                and all(i.amount is not None for i in extraction.items)
-                and sum(i.amount for i in extraction.items if i.amount is not None) == extraction.total
-            )
+            replace_items(db, receipt, DraftReceiptInput.model_validate(attempt.result), member)
             receipt.status = "ready" if complete else "draft"
-            if not complete:
-                receipt.error = "Uzupełnij dane paragonu. Nie udało się odczytać wszystkich informacji."
+            receipt.error = attempt.diagnostics.get("message")
         db.flush()
         db.add(
             ReviewTask(
@@ -941,6 +918,65 @@ def receipt_read(household_id: str, receipt_id: str, member: Membership, db: Db)
     return receipt_data(db, scoped(db, Receipt, household_id, receipt_id))
 
 
+@app.post("/households/{household_id}/receipts/{receipt_id}/ocr")
+def receipt_ocr_retry(household_id: str, receipt_id: str, member: Membership, db: Db, key: Key):
+    receipt = scoped(db, Receipt, household_id, receipt_id)
+    operation_lock = int.from_bytes(hashlib.sha256(f"ocr-operation:{receipt_id}:{key}".encode()).digest()[:8], signed=True)
+    db.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": operation_lock})
+    old = db.scalar(
+        select(ReceiptOCRAttempt).where(
+            ReceiptOCRAttempt.receipt_id == receipt_id, ReceiptOCRAttempt.household_id == household_id, ReceiptOCRAttempt.key == key
+        )
+    )
+    if old:
+        return {k: v for k, v in serialize(old).items() if k != "key"}
+    receipt_lock = int.from_bytes(hashlib.sha256(f"ocr-receipt:{receipt_id}".encode()).digest()[:8], signed=True)
+    if not db.scalar(text("SELECT pg_try_advisory_xact_lock(:id)"), {"id": receipt_lock}):
+        raise HTTPException(409, "Odczyt tego paragonu już trwa. Poczekaj na wynik.")
+    if settings.receipt_provider == "manual":
+        raise HTTPException(422, "Włącz Gemini lub OpenAI w konfiguracji, aby odczytać zdjęcie ponownie.")
+    path = storage_path(receipt.path)
+    if not path.is_file():
+        raise HTTPException(404, "Zdjęcie jest niedostępne. Nie można ponowić odczytu.")
+    rate_limit(f"receipts:{member.user_id}", 12, 3600)
+    rate_limit("receipt-service", 60, 3600)
+    attempt, _ = run_extraction(db, receipt, member, path.read_bytes(), key)
+    audit(db, member, "receipt.ocr_retry", receipt.id)
+    db.commit()
+    return {k: v for k, v in serialize(attempt).items() if k != "key"}
+
+
+@app.get("/households/{household_id}/receipts/{receipt_id}/ocr/{attempt_id}")
+def receipt_ocr_attempt(household_id: str, receipt_id: str, attempt_id: str, member: Membership, db: Db):
+    scoped(db, Receipt, household_id, receipt_id)
+    attempt = scoped(db, ReceiptOCRAttempt, household_id, attempt_id)
+    if attempt.receipt_id != receipt_id:
+        raise HTTPException(404, "Nie znaleziono próby odczytu.")
+    return {k: v for k, v in serialize(attempt).items() if k != "key"}
+
+
+@app.post("/households/{household_id}/receipts/{receipt_id}/ocr/{attempt_id}/apply")
+def receipt_ocr_apply(household_id: str, receipt_id: str, attempt_id: str, data: OCRApplyInput, member: Membership, db: Db):
+    receipt = scoped(db, Receipt, household_id, receipt_id, lock=True)
+    attempt = scoped(db, ReceiptOCRAttempt, household_id, attempt_id, lock=True)
+    if attempt.receipt_id != receipt_id:
+        raise HTTPException(404, "Nie znaleziono próby odczytu.")
+    if attempt.applied_at:
+        return receipt_data(db, receipt)
+    if receipt.status == "confirmed" or receipt.transaction_id:
+        raise HTTPException(
+            409, "Paragon jest zatwierdzony. Ponowny odczyt służy tylko do porównania; zapisany wydatek pozostaje bez zmian."
+        )
+    if attempt.result is None:
+        raise HTTPException(422, "Ta próba nie zawiera wyniku do zastosowania.")
+    if receipt.updated_at != data.expected_updated_at or receipt.updated_at != attempt.receipt_updated_at:
+        raise HTTPException(409, "Dane paragonu zmieniły się od czasu odczytu. Odśwież paragon i wykonaj nową próbę.")
+    attempt.applied_at = datetime.now(timezone.utc)
+    receipt.provider = attempt.provider
+    audit(db, member, "receipt.ocr_apply", receipt.id)
+    return receipt_draft(household_id, receipt_id, DraftReceiptInput.model_validate(attempt.result), member, db)
+
+
 @app.get("/households/{household_id}/receipts/{receipt_id}/image")
 def receipt_image(household_id: str, receipt_id: str, member: Membership, db: Db):
     receipt = scoped(db, Receipt, household_id, receipt_id)
@@ -951,13 +987,17 @@ def receipt_image(household_id: str, receipt_id: str, member: Membership, db: Db
 
 
 def replace_items(db, receipt, data, member):
-    for item in data.items:
-        if item.category_id:
-            category = scoped(db, Category, member.household_id, item.category_id)
-            if category.archived:
-                raise HTTPException(422, "Wybierz aktywną kategorię.")
+    category_ids = {item.category_id for item in data.items if item.category_id}
+    if category_ids:
+        categories = list(db.scalars(select(Category).where(Category.household_id == member.household_id, Category.id.in_(category_ids))))
+        if {category.id for category in categories} != category_ids:
+            raise HTTPException(404, "Nie znaleziono kategorii w tym gospodarstwie.")
+        if any(category.archived for category in categories):
+            raise HTTPException(422, "Wybierz aktywną kategorię.")
     receipt.merchant, receipt.date, receipt.total = data.merchant, data.date, data.total
     receipt.updated_by = member.user_id
+    # Item-only edits must advance the receipt revision as well as header edits.
+    receipt.updated_at = datetime.now(timezone.utc)
     db.execute(delete(ReceiptItem).where(ReceiptItem.receipt_id == receipt.id, ReceiptItem.household_id == member.household_id))
     for index, item in enumerate(data.items):
         db.add(
@@ -1137,6 +1177,7 @@ def export(household_id: str, member: Membership, db: Db):
         Goal,
         Recurring,
         Receipt,
+        ReceiptOCRAttempt,
         ReceiptItem,
         ClassificationRule,
         ReviewTask,
@@ -1170,6 +1211,7 @@ def household_delete(household_id: str, data: HouseholdInput, member: Membership
         BudgetSettlement,
         SurplusPolicy,
         ReviewTask,
+        ReceiptOCRAttempt,
         ReceiptItem,
         Receipt,
         TransactionAllocation,
@@ -1201,7 +1243,7 @@ def demo(request: Request, response: Response, db: Db):
         raise HTTPException(404, "Nie znaleziono.")
     rate_limit(f"auth:{request.client.host}", 15)
     user = db.scalar(select(User).where(User.email == "roch@demo.local"))
-    if not user:
+    if not user or user.is_admin:
         raise HTTPException(404, "Dane demo nie są dostępne. Uruchom skrypt seed.")
     set_session(db, user, response)
     db.commit()

@@ -1,5 +1,9 @@
 # Architecture Decision Records
 
+- [ADR-017: Repeatable receipt OCR and provider diagnostics](ADR-017-repeatable-receipt-ocr.md).
+
+- [ADR-016: Administrator-assisted account recovery](ADR-016-administrator-password-recovery.md).
+
 Accepted ADRs are binding unless superseded by a later ADR.
 
 - ADR-001: Product and budgeting model

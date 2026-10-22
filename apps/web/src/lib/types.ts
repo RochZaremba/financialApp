@@ -1,4 +1,9 @@
-export type User = { id: string; name: string; email: string };
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  is_admin: boolean;
+};
 export type Household = {
   id: string;
   name: string;
@@ -162,6 +167,7 @@ export type ReceiptItem = {
 };
 export type Receipt = {
   id: string;
+  updated_at: string;
   merchant: string;
   date: string | null;
   total: number | null;
@@ -170,6 +176,32 @@ export type Receipt = {
   error: string | null;
   transaction_id: string | null;
   items: ReceiptItem[];
+  ocr_attempts?: OCRAttempt[];
+};
+export type OCRAttempt = {
+  id: string;
+  created_at: string;
+  provider: string;
+  model: string;
+  status: "succeeded" | "partial" | "failed";
+  duration_ms: number;
+  applied_at: string | null;
+  receipt_updated_at: string;
+  diagnostics: {
+    kind?: string;
+    code?: string;
+    message?: string;
+    reason?: string;
+    http_status?: number | null;
+    retry_after_seconds?: number;
+    fields?: string[];
+  };
+  result: {
+    merchant: string;
+    date: string | null;
+    total: number | null;
+    items: ReceiptItem[];
+  } | null;
 };
 export type Analytics = {
   budget: Budget;

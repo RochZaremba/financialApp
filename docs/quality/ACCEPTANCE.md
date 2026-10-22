@@ -1,5 +1,7 @@
 # Acceptance criteria and implementation slices
 
+Receipt OCR retry/diagnostics: stored-image rereads work on failed, ready and confirmed receipts; API requests are authorized, rate-limited and idempotent, concurrent attempts cannot duplicate provider calls, and manual edits remain available during extraction. Failures preserve saved and unsaved corrections. Successful proposals require explicit application to an unchanged unconfirmed revision; finalized transactions/allocations/inventory are never rewritten. Distinguish safe HTTP/Google codes, blocked/truncated/invalid/partial output and sum mismatches; no raw provider payload, credential or financial content enters diagnostics/admin aggregates. Verify two clean browser loops at 390/430/768/1440 widths and existing critical receipt regressions.
+
 Read all repository documentation on 2026-10-05. The initial repository contains instructions only.
 
 1. Identity: real password authentication, revocable HttpOnly sessions, household creation, expiring invitation and second-member join; membership enforced in every scoped API route.
@@ -63,3 +65,13 @@ Integration: closing a source month must not strand an unpaid scheduled occurren
 
 
 Shopping/navigation acceptance: verified locally after two consecutive clean 9/9 three-browser loops, 192 responsive screenshots, zero WCAG/overflow violations and 131 API / 9 frontend / 20 deployment tests. Exact results and repaired defects are recorded in LOOP_LOG.md. Full hosted regression and merge-only release are required by PR #22 before production delivery.
+
+# Administrator-assisted password recovery
+
+- Explicit trusted-host provisioning creates an administrator or promotes an existing non-demo account; public registration cannot grant the role.
+- `/administrator` works without household membership and requires a current administrator session plus the administrator's password for each reset.
+- The target is identified by email; new passwords are confirmed in the UI and validated on the server, preserving whitespace.
+- A successful reset revokes all target sessions, records actor/target/time without credentials, and permits login only with the new password. Login and reset serialize on the target row.
+- Ordinary users cannot reset passwords. Administrator status grants no household-data access. Browser resets of administrator accounts are refused; owner-assisted CLI recovery remains available.
+- CSRF checks and per-administrator attempt limits apply; invalid/failed requests retain a useful error state. Success clears password fields.
+- Mobile 390/430, tablet 768 and desktop 1440 viewports have no overflow or detected WCAG A/AA violations; two consecutive browser recovery loops pass.

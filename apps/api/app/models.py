@@ -74,6 +74,13 @@ class User(Record, Base):
     email: Mapped[str] = mapped_column(String(254), unique=True)
     name: Mapped[str] = mapped_column(String(80))
     password_hash: Mapped[str] = mapped_column(String(300))
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+
+class PasswordResetEvent(Record, Base):
+    __tablename__ = "password_reset_events"
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 class SessionToken(Base):
@@ -243,6 +250,24 @@ class Receipt(Scoped, Base):
     error: Mapped[str | None] = mapped_column(String(300), nullable=True)
     transaction_id: Mapped[str | None] = mapped_column(ForeignKey("transactions.id", ondelete="SET NULL"), unique=True, nullable=True)
     __table_args__ = (CheckConstraint("total is null or total > 0"), CheckConstraint("status in ('draft','ready','confirmed','failed')"))
+
+
+class ReceiptOCRAttempt(Scoped, Base):
+    __tablename__ = "receipt_ocr_attempts"
+    receipt_id: Mapped[str] = mapped_column(ForeignKey("receipts.id", ondelete="CASCADE"), index=True)
+    key: Mapped[str] = mapped_column(String(100))
+    provider: Mapped[str] = mapped_column(String(20))
+    model: Mapped[str] = mapped_column(String(120), default="")
+    status: Mapped[str] = mapped_column(String(20))
+    diagnostics: Mapped[dict] = mapped_column(JSON, default=dict)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    receipt_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("receipt_id", "key"),
+        CheckConstraint("status in ('succeeded','partial','failed')"),
+    )
 
 
 class ReceiptItem(Scoped, Base):

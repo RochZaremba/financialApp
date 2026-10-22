@@ -67,6 +67,37 @@ Przegląd release z rzeczywistym kluczem potwierdził pełny odczyt przez Gemini
 
 ## Testy i migracje
 
+### Ponowny odczyt i diagnozowanie Gemini
+
+W widoku zapisanego paragonu wybierz „Odczytaj ponownie” i potwierdź wysłanie istniejącego zdjęcia. Wywołanie może być płatne. Wynik najpierw pojawia się jako podgląd; „Zastosuj odczyt do szkicu” zastępuje pola i pozycje, także ręczne lub niezapisane poprawki. Nieudana próba ich nie usuwa. Jeśli szkic zapisano po rozpoczęciu OCR, zastosowanie starego wyniku jest blokowane. Na zatwierdzonym paragonie wynik służy wyłącznie do porównania — nie zmienia wydatku, podziału kategorii ani zapasów.
+
+Historia pokazuje dostawcę/model, czas, status i kod próby. Odróżnia m.in. `RESOURCE_EXHAUSTED` / HTTP 429 (limity lub rozliczenia), 401/403 (klucz/uprawnienia/sieć), 404 (model/adres usługi), 5xx (awaria/przeciążenie), `TIMEOUT`, `MAX_TOKENS`, blokady bezpieczeństwa, brak kandydatów, niezgodność ze schematem i niepełne dane lub `TOTAL_MISMATCH`. Odpowiedź HTTP 200 nie oznacza poprawnego odczytu. Surowe komunikaty/odpowiedzi dostawcy mogą zawierać prywatne dane i nie są ujawniane; kody i bezpieczne nazwy pól wystarczają do rozróżnienia tych klas awarii.
+
+W `/administrator` sekcja „Diagnostyka OCR” grupuje nowe próby Gemini/OpenAI z ostatnich siedmiu dni według modelu, wyniku i kodu. Osobno pokazuje błędy i niepełne odczyty. Dane zaczynają się po wdrożeniu migracji 011; starszych ogólnych błędów nie da się z nich odtworzyć. Aby zbadać zgłaszaną częstość awarii, porównaj kody i modele w tej sekcji zamiast zakładać, że każda awaria oznacza przeciążenie Gemini. Log backendu zawiera identyfikator próby oraz bezpieczne kody, bez zdjęcia, tekstu paragonu czy klucza. Nie zmieniaj modelu ani nie podnoś limitów rozliczeniowych bez sprawdzenia rzeczywistego kodu.
+
+Izolowany, bezpłatny test ponownego OCR i krytycznych przepływów (zatrzymaj web/API; wymagany build i działający PostgreSQL):
+
+```bash
+CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium .venv/bin/python scripts/admin-review.py --ocr --regression -- product.spec.ts
+```
+
+Bez systemowego Chromium pomiń tę zmienną i użyj przeglądarki zainstalowanej przez Playwright. Test wykonuje dwa kolejne przebiegi, po 12 kontroli widoków/stanu/dostępności na czterech viewportach; używa syntetycznego paragonu i atrap błędów, bez płatnego OCR. Wyniki: `artifacts/ui-review/ocr-1/` i `ocr-2/`.
+
+### Administrator i zapomniane hasło
+
+Na zaufanym serwerze, po zastosowaniu migracji, utwórz konto administratora:
+
+```bash
+cd apps/api
+../../.venv/bin/python -m app.create_admin admin@example.com --name "Administrator"
+```
+
+Jeśli konto już istnieje, polecenie nadaje uprawnienia bez zmiany hasła i wylogowuje wcześniejsze sesje. Dla nowego konta pyta o hasło i jego powtórzenie bez wyświetlania wartości. Nie podawaj hasła w argumentach, repozytorium ani na czacie. W Dockerze użyj `docker compose -f compose.production.yaml exec api python -m app.create_admin admin@example.com`. Konta demonstracyjne nie mogą zostać administratorami.
+
+Zaloguj się zwykłym formularzem i otwórz `/administrator` (także z menu Administrator lub Więcej). Administrator nie musi należeć do gospodarstwa. Wpisz e-mail użytkownika, nowe hasło dwukrotnie i własne hasło administratora. Najpierw potwierdź tożsamość proszącej osoby, a nowe hasło przekaż prywatnie. Reset wylogowuje wszystkie sesje użytkownika i zapisuje identyfikatory administratora/użytkownika oraz czas w `password_reset_events`, bez haseł. Limit wynosi 5 prób na 5 minut na administratora. Rola nie przyznaje dostępu do cudzych danych finansowych.
+
+Panel nie zmienia haseł kont administratorów. Zapomniane hasło administratora nadal zmienia właściciel serwera poleceniem `python -m app.reset_password admin@example.com`. Utworzenie administratora jest świadomą operacją właściciela; migracja nie nadaje nikomu tej roli automatycznie.
+
 Zatrzymaj lokalne web/API (Ctrl+C). `check.sh` buduje i uruchamia własne serwery z testowanego kodu, wykonuje testy i przeglądy ekranów, następnie zatrzymuje serwery. Przeglądarka używa świeżej, jednorazowej bazy i osobnego katalogu zdjęć, usuwanych po przebiegu; dane Waszego domu pozostają. Tryb testów wymusza fixture i nie wywołuje płatnego AI. Zainstaluj silnik przeglądarki, potem:
 
 ```bash
@@ -77,6 +108,16 @@ npx playwright install chromium
 node scripts/visual-review.mjs moj-przeglad
 node scripts/state-review.mjs
 ```
+
+Izolowany test panelu administratora (zatrzymaj web/API; wymaga zbudowanego frontendu i działającej bazy):
+
+```bash
+.venv/bin/python scripts/admin-review.py --regression
+# W środowisku z systemowym Chromium:
+CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium .venv/bin/python scripts/admin-review.py --regression
+```
+
+Skrypt tworzy i usuwa własną bazę oraz konta QA, wykonuje dwa przebiegi odzyskiwania hasła i sprawdza cztery rozmiary ekranu oraz dostępność. `--regression` dodaje istniejące E2E Chromium. Hasła QA są losowane w pamięci; dane użytkowników i klucze OCR nie są używane. Zrzuty i wyniki: `artifacts/ui-review/admin-1` i `admin-2`.
 
 `check.sh`: lint bez ostrzeżeń, TypeScript, Vitest, produkcyjny build, Ruff check/format, migracje i pytest na osobnej bazie `dom_test`, Playwright mobile/desktop oraz zrzuty wszystkich ekranów i stanów z kontrolą dostępności i overflow. Nigdy nie czyści bazy development. Nazwę katalogu dowodów zmienia `REVIEW_PASS`, np. `REVIEW_PASS=review-1 ./scripts/check.sh`. Porty 3000/8000 muszą być wolne; skrypt odmawia przebudowy działającego Next.js, aby nie uszkodzić serwowanych plików. `./scripts/check.sh --static` wykonuje te same bramki bez przeglądarki (wymaga wolnego portu 3000); po zbudowaniu uruchom `./scripts/start.sh` i osobno `npm run e2e`, aby sprawdzić produkcyjny build. Testy izolacji gospodarstw, arytmetyki, duplikatów, sum kategorii, historii, kieszonkowego i płatności cyklicznych są w `apps/api/tests`. Krytyczne scenariusze przeglądarkowe są w `apps/web/e2e`. Opcjonalnie `npx playwright install webkit` i `WEBKIT=1 npm run e2e` dodają testy silnika Safari. Na Linuksie bez bibliotek WebKit (np. Arch) zatrzymaj lokalne serwery i uruchom pełny zestaw przez oficjalny kontener: `PLAYWRIGHT_DOCKER=1 WEBKIT=1 ./scripts/check.sh`. Skrypt dobiera wersję obrazu do zainstalowanego Playwright; Docker używa sieci hosta i wymaga Linuksa. `node scripts/webkit-offline.mjs` dodatkowo sprawdza prawdziwą awarię sieci: emulator Playwright 1.63 ma błąd SW/offline w WebKit.
 

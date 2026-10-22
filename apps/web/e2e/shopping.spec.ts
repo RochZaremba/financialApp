@@ -76,6 +76,13 @@ test("household shopping list, shared purchase, stock consumption and repeat his
   browser,
 }, info) => {
   const { base, household, data, unique } = await home(page, info);
+  // The API clock remains real even when the browser uses the QA fixture date.
+  const shopping = await page.request
+    .get(`${base}/shopping`)
+    .then((r) => r.json());
+  const expiry = new Date(`${shopping.today}T12:00:00Z`);
+  expiry.setUTCDate(expiry.getUTCDate() + 2);
+  const freshExpiry = expiry.toISOString().slice(0, 10);
   await page.goto("/");
   if (info.project.name === "desktop")
     await page
@@ -157,7 +164,7 @@ test("household shopping list, shared purchase, stock consumption and repeat his
     await second.getByLabel("Sklep", { exact: true }).fill("Sklep domowy");
     await second
       .getByLabel("Termin ważności", { exact: true })
-      .fill("2026-10-10");
+      .fill(freshExpiry);
     await second
       .getByRole("button", { name: "Potwierdź zakup", exact: true })
       .click();

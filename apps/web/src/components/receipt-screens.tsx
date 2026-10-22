@@ -44,6 +44,7 @@ import {
 import { PageHeading } from "./budget-screens";
 
 import { ManualTransaction, type MovementKind } from "./movement-form";
+import { ReceiptOCR } from "./receipt-ocr";
 export function AddScreen() {
   const { month } = useApp();
   const params = useSearchParams();
@@ -428,6 +429,24 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
           Dodaj produkty do domowych zapasów <ArrowRight size={17} />
         </Link>
       )}
+      <ReceiptOCR
+        receipt={receipt}
+        onApply={(value) => {
+          setMerchant(value.merchant);
+          setDate(value.date || "");
+          setTotal(value.total == null ? "" : moneyInput(value.total));
+          setItems(
+            value.items.map((item, index) => ({
+              ...item,
+              localId: item.id || String(index),
+              amountText: item.amount == null ? "" : moneyInput(item.amount),
+            })),
+          );
+          setEditingItems(new Set());
+          setAcknowledge(false);
+          setDuplicateDetected(false);
+        }}
+      />
       {receipt.provider === "fixture" && (
         <div className="notice soft">
           <ScanLine size={17} />
@@ -441,12 +460,15 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
           przekraczać ich kwoty.
         </div>
       )}
-      {receipt.error && incomplete && !readOnly && (
-        <div className="notice warning">
-          <FilePenLine size={18} />
-          {receipt.error}
-        </div>
-      )}
+      {receipt.error &&
+        incomplete &&
+        !readOnly &&
+        !receipt.ocr_attempts?.length && (
+          <div className="notice warning">
+            <FilePenLine size={18} />
+            {receipt.error}
+          </div>
+        )}
       {imageVisible && (
         <Card className="receipt-image-card">
           {/* Private authenticated URL, bypass Next public image caching. */}

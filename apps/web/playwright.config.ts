@@ -1,4 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+const chromiumLaunch = {
+  launchOptions: {
+    executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined,
+  },
+};
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -20,11 +25,15 @@ export default defineConfig({
     timezoneId: "Europe/Warsaw",
   },
   projects: [
-    { name: "desktop", use: { viewport: { width: 1440, height: 900 } } },
+    {
+      name: "desktop",
+      use: { ...chromiumLaunch, viewport: { width: 1440, height: 900 } },
+    },
     {
       name: "mobile",
       use: {
         ...devices["iPhone 13"],
+        ...chromiumLaunch,
         defaultBrowserType: "chromium",
         viewport: { width: 390, height: 844 },
       },
