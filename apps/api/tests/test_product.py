@@ -442,7 +442,7 @@ def test_provider_failure_retains_private_photo_and_review_task(client, househol
         def extract(self, image, categories):
             raise RuntimeError("external provider unavailable")
 
-    monkeypatch.setattr("app.main.provider", lambda: FailedProvider())
+    monkeypatch.setattr("app.ocr.provider", lambda: FailedProvider())
     receipt = upload(client, household).json()
     assert receipt["status"] == "failed" and receipt["items"] == []
     assert client.get(household["path"] + "/receipts/" + receipt["id"] + "/image").status_code == 200
@@ -482,7 +482,7 @@ def test_confident_receipt_remains_discoverable_until_finalization(client, house
                 items=[ExtractedItem(name="Jabłka", quantity="1", amount=1234, category_id=categories[0]["id"], confidence=99)],
             )
 
-    monkeypatch.setattr("app.main.provider", lambda: ConfidentProvider())
+    monkeypatch.setattr("app.ocr.provider", lambda: ConfidentProvider())
     receipt = upload(client, household).json()
     assert receipt["status"] == "ready"
     overview = client.get(household["path"] + "/overview?month=2026-10").json()

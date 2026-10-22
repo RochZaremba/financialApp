@@ -17,7 +17,7 @@ def main():
     if len(password) < 10 or len(password) > 128 or password != getpass.getpass("Confirm password: "):
         raise SystemExit("Passwords must match and contain 10–128 characters.")
     with SessionLocal() as db:
-        user = db.scalar(select(User).where(User.email == sys.argv[1].lower()))
+        user = db.scalar(select(User).where(User.email == sys.argv[1].lower()).with_for_update())
         if not user:
             raise SystemExit("User not found.")
         user.password_hash = hasher.hash(password)

@@ -141,6 +141,10 @@ class DraftItemInput(Schema):
     reviewed: bool = False
 
 
+class OCRApplyInput(Schema):
+    expected_updated_at: datetime
+
+
 class DraftReceiptInput(Schema):
     merchant: str = Field(default="", max_length=120)
     date: DateValue | None = None

@@ -1444,7 +1444,7 @@ export function TransactionsScreen() {
   );
 }
 export function MoreScreen() {
-  const { data } = useApp();
+  const { data, me } = useApp();
   return (
     <>
       <PageHeading
@@ -1452,6 +1452,18 @@ export function MoreScreen() {
         description="Wszystko, co pomaga Wam planować spokojniej."
       />
       <Card className="more-list">
+        {me.user.is_admin && (
+          <Link href="/administrator">
+            <span className="icon-box">
+              <Settings size={21} />
+            </span>
+            <div>
+              <strong>Administrator</strong>
+              <small>Przywracanie dostępu do kont</small>
+            </div>
+            <ArrowRight size={18} />
+          </Link>
+        )}
         {[
           {
             href: "/zakupy",

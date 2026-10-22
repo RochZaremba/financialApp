@@ -58,6 +58,7 @@ import {
   RecurringScreen,
 } from "./future-screens";
 import { ShoppingScreen } from "./shopping-screen";
+import { AdminScreen } from "./admin-screen";
 
 const nav = [
   { href: "/", label: "Pulpit", icon: House },
@@ -212,6 +213,13 @@ function Authenticated() {
         invited={!!params.get("token")}
       />
     );
+  if (
+    path === "/administrator" ||
+    (auth.data.user.is_admin && !household && path !== "/dolacz")
+  )
+    return (
+      <AdminScreen me={auth.data} logout={logout} logoutError={logoutError} />
+    );
   if (!household || path === "/dolacz")
     return (
       <Onboarding
@@ -311,6 +319,12 @@ function Authenticated() {
           ))}
         </div>
         <div className="sidebar-bottom">
+          {auth.data.user.is_admin && (
+            <Link className="nav-item" href="/administrator">
+              <ShieldCheck size={19} />
+              Administrator
+            </Link>
+          )}
           <Link
             href="/ustawienia"
             className={`nav-item ${path === "/ustawienia" ? "active" : ""}`}
@@ -623,6 +637,12 @@ function AuthScreen({
               {register ? "Utwórz konto" : "Zaloguj się"}
             </Submit>
           </form>
+          {!register && (
+            <p className="muted">
+              Nie pamiętasz hasła? Poproś administratora aplikacji o ustawienie
+              nowego.
+            </p>
+          )}
           <button
             className="text-button auth-toggle"
             onClick={() => {

@@ -20,6 +20,12 @@ class ReceiptProvider(Protocol):
     def extract(self, image: bytes, categories: list[dict]) -> Extraction: ...
 
 
+class ProviderFailure(ValueError):
+    def __init__(self, message: str, code: str, *, kind: str = "blocked", retryable: bool = False):
+        super().__init__(message)
+        self.code, self.kind, self.retryable = code, kind, retryable
+
+
 class ManualProvider:
     def extract(self, image, categories):
         return Extraction(merchant="", date=None, total=None, items=[])
@@ -30,7 +36,7 @@ class FixtureProvider:
 
     def extract(self, image, categories):
         fixture = (ROOT / "fixtures/lidl.png").read_bytes()
-        if hashlib.sha256(image).digest() != hashlib.sha256(fixture).digest():
+        if hashlib.sha256(image).digest() not in {hashlib.sha256(fixture).digest(), hashlib.sha256(validated_image(fixture)).digest()}:
             return ManualProvider().extract(image, categories)
         data = json.loads((ROOT / "fixtures/lidl.json").read_text())
         for item in data["items"]:
@@ -105,9 +111,41 @@ class GeminiProvider:
             timeout=75,
         )
         response.raise_for_status()
-        candidates = response.json().get("candidates", [])
-        if not candidates or candidates[0].get("finishReason") != "STOP":
-            raise ValueError("Gemini nie zwróciło pełnego odczytu. Uzupełnij paragon ręcznie.")
+        body = response.json()
+        candidates = body.get("candidates", [])
+        known_reasons = {
+            "MAX_TOKENS",
+            "SAFETY",
+            "RECITATION",
+            "OTHER",
+            "BLOCKLIST",
+            "PROHIBITED_CONTENT",
+            "SPII",
+            "MALFORMED_FUNCTION_CALL",
+            "UNEXPECTED_TOOL_CALL",
+            "NO_IMAGE",
+            "IMAGE_SAFETY",
+            "IMAGE_PROHIBITED_CONTENT",
+            "IMAGE_RECITATION",
+            "IMAGE_OTHER",
+            "LANGUAGE",
+        }
+        if not candidates:
+            reason = body.get("promptFeedback", {}).get("blockReason")
+            raise ProviderFailure(
+                "Gemini nie zwróciło pełnego odczytu: brak wyniku lub blokada zdjęcia.",
+                reason if reason in known_reasons else "NO_CANDIDATES",
+                kind="blocked" if reason else "empty_output",
+                retryable=not reason,
+            )
+        reason = candidates[0].get("finishReason")
+        if reason != "STOP":
+            raise ProviderFailure(
+                "Gemini nie zwróciło pełnego odczytu: odpowiedź została przerwana.",
+                reason if reason in known_reasons else "UNKNOWN_FINISH_REASON",
+                kind="output_truncated" if reason == "MAX_TOKENS" else "blocked",
+                retryable=reason in ("MAX_TOKENS", "OTHER"),
+            )
         parts = candidates[0].get("content", {}).get("parts", [])
         text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
         return Extraction.model_validate_json(text)
