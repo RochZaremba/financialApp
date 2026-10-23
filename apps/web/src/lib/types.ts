@@ -93,6 +93,9 @@ export type Budget = {
 };
 export type Split = { category_id: string; amount: number };
 export type Transaction = {
+  created_by_name?: string | null;
+  created_by?: string | null;
+  created_at?: string;
   updated_at: string;
   id: string;
   kind: string;
@@ -166,6 +169,9 @@ export type ReceiptItem = {
   reviewed: boolean;
 };
 export type Receipt = {
+  created_by_name?: string | null;
+  created_by?: string | null;
+  created_at?: string;
   id: string;
   updated_at: string;
   merchant: string;
