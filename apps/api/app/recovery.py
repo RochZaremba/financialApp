@@ -10,7 +10,7 @@ from typing import Annotated
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -68,7 +68,7 @@ class RecoveryInput(Credentials):
 
 
 @router.post("/recover")
-def recover(data: RecoveryInput, request: Request, db: Annotated[Session, Depends(get_db)]):
+def recover(data: RecoveryInput, request: Request, response: Response, db: Annotated[Session, Depends(get_db)]):
     rate_limit(f"recovery-ip:{request.client.host}", 10, 300)
     rate_limit(f"recovery-account:{digest(data.email)}", 5, 300)
     try:
@@ -93,4 +93,5 @@ def recover(data: RecoveryInput, request: Request, db: Annotated[Session, Depend
     db.add(RecoveryGrantUse(id=grant.id, target_id=user.id, used_at=now))
     db.add(PasswordResetEvent(target_id=user.id))
     db.commit()
+    response.delete_cookie("dom_session", path="/")
     return {"ok": True}

@@ -88,6 +88,8 @@ try {
     page.getByRole("heading", { name: "Hasło zmienione" }),
   ).toBeVisible();
   await review("success");
+  await page.getByRole("link", { name: "Przejdź do logowania" }).click();
+  await expect(page.getByLabel("Hasło", { exact: true })).toBeVisible();
   assert.equal((await context.request.get("/api/auth/me")).status(), 401);
   assert.equal(
     (
@@ -113,7 +115,7 @@ try {
     ).status(),
     400,
   );
-  await page.getByRole("link", { name: "Przejdź do logowania" }).click();
+  await page.goto("/");
   await expect(page.getByRole("heading", { name: /^Cześć,/ })).toBeVisible();
   assert.deepEqual(errors, []);
   console.log(

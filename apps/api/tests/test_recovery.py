@@ -103,6 +103,16 @@ def test_missing_account_and_administrator_are_rejected_identically(client, monk
     assert admin.json() == missing.json() == {"detail": recovery.INVALID}
 
 
+def test_success_clears_unrelated_browser_cookie_without_changing_its_account(client, monkeypatch):
+    register(client)
+    register(client, "helper@example.com")
+    _, payload = issue(monkeypatch)
+    response = client.post("/auth/recover", json=payload)
+    assert response.status_code == 200 and "Max-Age=0" in response.headers["set-cookie"]
+    assert client.get("/auth/me").status_code == 401
+    assert client.post("/auth/login", json={"email": "helper@example.com", "password": OLD}).status_code == 200
+
+
 def test_confirmation_validation_and_csrf_do_not_consume_grant(client, monkeypatch):
     register(client)
     _, payload = issue(monkeypatch)

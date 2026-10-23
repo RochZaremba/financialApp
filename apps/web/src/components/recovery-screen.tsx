@@ -2,10 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, ErrorMessage, Field, Submit } from "./ui";
 import { api, json } from "@/lib/api";
 
 export function RecoveryScreen() {
+  const query = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
@@ -34,6 +36,7 @@ export function RecoveryScreen() {
         }),
       );
       form.reset();
+      query.clear();
       setDone(true);
     } catch (cause) {
       setError(
