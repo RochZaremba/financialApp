@@ -1,6 +1,8 @@
 """Run administrator recovery checks against an isolated disposable database."""
 
 import os
+import base64
+import json
 import secrets
 import shutil
 import socket
@@ -8,6 +10,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import httpx
 
@@ -47,7 +51,30 @@ def main():
 
     services = []
     created = False
+    grants_file = artifacts / f"recovery-qa-grants-{os.getpid()}.json"
     try:
+        if "--recovery" in sys.argv:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+            from app.recovery import Grant, message
+            from app.security import digest
+
+            grants = []
+            for number in (1, 2):
+                private = Ed25519PrivateKey.generate()
+                now = datetime.now(timezone.utc)
+                grant = Grant(
+                    id=uuid4().hex,
+                    target_email_sha256=digest(f"recovery-review-{number}@example.com"),
+                    public_key=base64.urlsafe_b64encode(private.public_key().public_bytes_raw()).decode().rstrip("="),
+                    valid_from=now,
+                    expires_at=now + timedelta(hours=1),
+                )
+                grants.append(grant.model_dump(mode="json"))
+                environment[f"RECOVERY_REVIEW_KEY_{number}"] = (
+                    grant.id + "." + base64.urlsafe_b64encode(private.sign(message(grant))).decode().rstrip("=")
+                )
+            grants_file.write_text(json.dumps(grants))
+            environment["RECOVERY_GRANTS_FILE"] = str(grants_file)
         sql(f"CREATE DATABASE {database}")
         created = True
         for arguments in [["-m", "alembic", "upgrade", "head"], ["-m", "app.seed"]]:
@@ -78,6 +105,8 @@ def main():
                 raise RuntimeError("QA server did not become ready")
         for number in (1, 2):
             review = "scripts/ocr-review.mjs" if "--ocr" in sys.argv else "scripts/admin-review.mjs"
+            if "--recovery" in sys.argv:
+                review = "scripts/recovery-review.mjs"
             subprocess.run(["node", review, str(number)], cwd=ROOT, env=environment, check=True)
         if "--regression" in sys.argv:
             arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
@@ -94,6 +123,7 @@ def main():
         if created:
             sql(f"DROP DATABASE {database} WITH (FORCE)")
         shutil.rmtree(storage, ignore_errors=True)
+        grants_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

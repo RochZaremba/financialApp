@@ -59,6 +59,7 @@ import {
 } from "./future-screens";
 import { ShoppingScreen } from "./shopping-screen";
 import { AdminScreen } from "./admin-screen";
+import { RecoveryScreen } from "./recovery-screen";
 
 const nav = [
   { href: "/", label: "Pulpit", icon: House },
@@ -186,6 +187,7 @@ function Authenticated() {
       );
     }
   }
+  if (path === "/odzyskaj") return <RecoveryScreen />;
   if (auth.isPending)
     return (
       <main className="standalone-loading">
@@ -640,7 +642,8 @@ function AuthScreen({
           {!register && (
             <p className="muted">
               Nie pamiętasz hasła? Poproś administratora aplikacji o ustawienie
-              nowego.
+              nowego. Masz klucz odzyskiwania?{" "}
+              <Link href="/odzyskaj">Ustaw nowe hasło</Link>.
             </p>
           )}
           <button

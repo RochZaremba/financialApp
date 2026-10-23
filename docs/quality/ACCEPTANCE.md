@@ -68,6 +68,8 @@ Shopping/navigation acceptance: verified locally after two consecutive clean 9/9
 
 # Administrator-assisted password recovery
 
+Emergency extension (ADR-018): only an owner-issued, exact-account grant may authorize `/odzyskaj`. Every grant has its own ephemeral signing key and an absolute lifetime of at most 24 hours. Public metadata is reviewed through normal delivery; no bearer token/private key in code, logs or artifacts. Signature/time/target checks precede a locked, atomic password reset, durable unique consumption, audit and revocation of all sessions. Administrator/nonexistent accounts fail generically. Replay, altered grants, other accounts, expiration, concurrency, confirmation, CSRF and rate limits are tested. Empty configuration disables recovery. Four viewports/accessibility and two consecutive real browser loops are required.
+
 - Explicit trusted-host provisioning creates an administrator or promotes an existing non-demo account; public registration cannot grant the role.
 - `/administrator` works without household membership and requires a current administrator session plus the administrator's password for each reset.
 - The target is identified by email; new passwords are confirmed in the UI and validated on the server, preserving whitespace.

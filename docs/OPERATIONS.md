@@ -85,6 +85,25 @@ Bez systemowego Chromium pomiń tę zmienną i użyj przeglądarki zainstalowane
 
 ### Administrator i zapomniane hasło
 
+#### Awaryjny klucz dla jednego konta
+
+Gdy właściciel nie ma SSH ani skonfigurowanego administratora, może dostarczyć osobną zgodę odzyskiwania przez chroniony PR i zwykły pipeline wydania (ADR-018). Nie ma wspólnego hasła. Domyślnie `app/recovery_grants.json` jest pustą listą.
+
+Po potwierdzeniu dokładnego e-maila zwykłego konta uruchom z katalogu repozytorium:
+
+```bash
+.venv/bin/python scripts/issue-recovery.py exact-email@example.com \
+  --token-file /tmp/private-account-recovery-token --hours 24
+```
+
+Polecenie zapisuje token w nowym pliku poza repozytorium z prawami 0600. Na standardowe wyjście wypisuje wyłącznie publiczne metadane: dodaj ten obiekt do listy `apps/api/app/recovery_grants.json`, sprawdź termin ważności i dostarcz przez wymagane testy/PR/release. Prywatny klucz podpisujący jest jednorazowy i nie jest zapisywany. Nie kopiuj tokenu do kodu, opisu PR, logów ani artefaktów. Nie uruchamiaj wydawania tokenu w GitHub Actions. Publiczne metadane nie pozwalają odtworzyć tokenu.
+
+Po udanym wdrożeniu przekaż token prywatnie uprawnionej osobie. Na `/odzyskaj` wpisuje dokładny e-mail, klucz i dwukrotnie własne nowe hasło. Token nie jest hasłem do logowania. Zmiana wylogowuje stare sesje; następnie użytkownik loguje się zwykłym formularzem. Klucz nie działa na innych kontach ani na administratorach, wygasa automatycznie najpóźniej po 24 godzinach i jest trwale zużywany przy udanym resecie. Nie trzeba czekać na usunięcie kodu, by przestał działać.
+
+Po użyciu usuń prywatny plik tokenu i wycofaj publiczną zgodę w kolejnym PR. Nigdy nie usuwaj rekordów `recovery_grant_uses`: chronią przed ponownym użyciem, również po restarcie i usunięciu konta. Konfiguracja `RECOVERY_GRANTS_FILE` może wskazać inny zaufany plik samych publicznych metadanych; nie przyjmuj go z żądania użytkownika. Izolowany przegląd funkcji: `CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium .venv/bin/python scripts/admin-review.py --recovery` (wymaga zatrzymania lokalnych serwerów i aktualnego buildu).
+
+#### Standardowy administrator
+
 Na zaufanym serwerze, po zastosowaniu migracji, utwórz konto administratora:
 
 ```bash

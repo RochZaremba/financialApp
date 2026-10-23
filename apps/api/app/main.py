@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .admin import router as admin_router
+from .recovery import router as recovery_router
 from .db import get_db
 from .domain import (
     account_data,
@@ -103,6 +104,7 @@ app = FastAPI(title="Dom · budżet domowy", version="1.0.0")
 app.add_middleware(RequestBodyLimit)
 app.include_router(shopping_router)
 app.include_router(admin_router)
+app.include_router(recovery_router)
 Db = Annotated[Session, Depends(get_db)]
 Person = Annotated[User, Depends(current_user)]
 Membership = Annotated[Member, Depends(household_member)]

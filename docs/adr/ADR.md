@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+- [ADR-018: Scoped emergency account recovery](ADR-018-scoped-emergency-recovery.md).
+
 - [ADR-017: Repeatable receipt OCR and provider diagnostics](ADR-017-repeatable-receipt-ocr.md).
 
 - [ADR-016: Administrator-assisted account recovery](ADR-016-administrator-password-recovery.md).

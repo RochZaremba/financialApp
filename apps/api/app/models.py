@@ -83,6 +83,13 @@ class PasswordResetEvent(Record, Base):
     target_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
+class RecoveryGrantUse(Base):
+    __tablename__ = "recovery_grant_uses"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    target_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class SessionToken(Base):
     __tablename__ = "sessions"
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
