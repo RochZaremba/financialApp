@@ -421,6 +421,23 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
           </button>
         }
       />
+      <p className="muted small record-author">
+        Dodano przez:{" "}
+        <strong>{receipt.created_by_name || "Nieznany autor"}</strong>
+        {receipt.created_at && (
+          <>
+            {" "}
+            ·{" "}
+            <time dateTime={receipt.created_at}>
+              {new Date(receipt.created_at).toLocaleString("pl-PL", {
+                timeZone: "Europe/Warsaw",
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </time>
+          </>
+        )}
+      </p>
       {readOnly && (
         <Link
           className="button secondary"

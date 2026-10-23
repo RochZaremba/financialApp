@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .admin import router as admin_router
+from .activity import router as activity_router
 from .db import get_db
 from .domain import (
     account_data,
@@ -22,6 +23,7 @@ from .domain import (
     budget_data,
     create_transaction,
     create_record,
+    creator_names,
     fingerprint,
     goal_data,
     learn,
@@ -103,6 +105,7 @@ app = FastAPI(title="Dom · budżet domowy", version="1.0.0")
 app.add_middleware(RequestBodyLimit)
 app.include_router(shopping_router)
 app.include_router(admin_router)
+app.include_router(activity_router)
 Db = Annotated[Session, Depends(get_db)]
 Person = Annotated[User, Depends(current_user)]
 Membership = Annotated[Member, Depends(household_member)]
@@ -281,6 +284,7 @@ def overview(household_id: str, month: str, member: Membership, db: Db):
         )
     )
     accounts = account_data(db, household_id)
+    authors = creator_names(db, transactions)
     valuation = value_accounts(accounts)
     return dict(
         account_valuation=valuation,
@@ -291,7 +295,7 @@ def overview(household_id: str, month: str, member: Membership, db: Db):
         accounts=accounts,
         goals=goal_data(db, household_id),
         tasks=tasks,
-        recent=[transaction_data(db, t) for t in transactions],
+        recent=[transaction_data(db, t, authors) for t in transactions],
         recurring=recurring_data(db, household_id, month),
         reminders=reminders(db, household_id, today()),
         rules=[serialize(r) for r in records(db, ClassificationRule, household_id)],
@@ -564,7 +568,8 @@ def transaction_list(
         "amount_asc": Transaction.amount.asc(),
     }[sort]
     txs = list(db.scalars(query.order_by(ordering, Transaction.created_at.desc(), Transaction.id).offset(offset).limit(limit + 1)))
-    return {"items": [transaction_data(db, t) for t in txs[:limit]], "has_more": len(txs) > limit}
+    authors = creator_names(db, txs[:limit])
+    return {"items": [transaction_data(db, t, authors) for t in txs[:limit]], "has_more": len(txs) > limit}
 
 
 @app.get("/households/{household_id}/transactions/{transaction_id}")
@@ -787,6 +792,7 @@ def receipt_data(db, receipt):
     )
     return dict(
         **serialize(receipt),
+        created_by_name=creator_names(db, [receipt]).get(receipt.created_by),
         ocr_attempts=[
             dict(
                 **{k: v for k, v in serialize(attempt).items() if k not in ("key", "result")}, result=attempt.result if index == 0 else None

@@ -21,6 +21,7 @@ import {
   CircleCheck,
   Trash2,
   ShoppingBasket,
+  Users,
 } from "lucide-react";
 import { api, json } from "@/lib/api";
 import {
@@ -1021,6 +1022,9 @@ export function TransactionRows({
                               ? `${t.allocations.length} kategorie`
                               : category?.name || "Wydatek"}
                 </span>
+                <span className="record-author">
+                  Dodano przez: {t.created_by_name || "Nieznany autor"}
+                </span>
               </div>
               <span
                 className={`transaction-amount ${positive ? "positive-text" : ""}`}
@@ -1031,6 +1035,22 @@ export function TransactionRows({
               <ChevronDown size={16} className="details-chevron" />
             </summary>
             <div className="transaction-details">
+              <div>
+                <span>Autor wpisu</span>
+                <strong>{t.created_by_name || "Nieznany autor"}</strong>
+              </div>
+              {t.created_at && (
+                <div>
+                  <span>Czas dodania</span>
+                  <time dateTime={t.created_at}>
+                    {new Date(t.created_at).toLocaleString("pl-PL", {
+                      timeZone: "Europe/Warsaw",
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </time>
+                </div>
+              )}
               <div>
                 <span>Konto</span>
                 <strong>
@@ -1465,6 +1485,12 @@ export function MoreScreen() {
           </Link>
         )}
         {[
+          {
+            href: "/aktywnosc",
+            label: "Aktywność domowników",
+            desc: "Kto dodaje paragony, wydatki i wpływy",
+            icon: Users,
+          },
           {
             href: "/zakupy",
             label: "Zakupy i zapasy",

@@ -24,6 +24,7 @@ from .models import (
     Recurring,
     Transaction,
     TransactionAllocation,
+    User,
 )
 from .schemas import TransactionInput
 
@@ -202,8 +203,14 @@ def create_transaction(db: Session, member: Member, data: TransactionInput, key:
     return transaction
 
 
-def transaction_data(db, tx):
+def creator_names(db, rows):
+    identifiers = {row.created_by for row in rows if row.created_by}
+    return dict(db.execute(select(User.id, User.name).where(User.id.in_(identifiers))).all()) if identifiers else {}
+
+
+def transaction_data(db, tx, authors=None):
     data = serialize(tx)
+    data["created_by_name"] = (creator_names(db, [tx]) if authors is None else authors).get(tx.created_by)
     data["allocations"] = [
         serialize(a)
         for a in db.scalars(

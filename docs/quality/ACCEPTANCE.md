@@ -75,3 +75,10 @@ Shopping/navigation acceptance: verified locally after two consecutive clean 9/9
 - Ordinary users cannot reset passwords. Administrator status grants no household-data access. Browser resets of administrator accounts are refused; owner-assisted CLI recovery remains available.
 - CSRF checks and per-administrator attempt limits apply; invalid/failed requests retain a useful error state. Success clears password fields.
 - Mobile 390/430, tablet 768 and desktop 1440 viewports have no overflow or detected WCAG A/AA violations; two consecutive browser recovery loops pass.
+# Authorship and household activity
+
+- Receipt and transaction authors come from the authenticated creator and cannot be supplied by clients or changed through edits/retries.
+- Names appear on receipt details and transaction rows/details. Legacy missing authors are explicitly unknown; no invented backfill.
+- Household Activity shows monthly/all-time counts of saved receipts (including drafts), expenses and income and exact expense/income amounts per recorder. All counts use creation time in Europe/Warsaw, not purchase date. Receipt totals are not added to expenses.
+- Include current members with zero entries and historical authors; do not expose email addresses. Another household's members cannot read the page's API or influence its aggregates.
+- Desktop/mobile navigation, readable four-viewport layouts, loading/empty/retry states, and two consecutive clean real-user browser loops.
