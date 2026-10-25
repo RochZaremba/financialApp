@@ -24,6 +24,7 @@ import {
   FilePenLine,
   AlertTriangle,
   ShoppingBasket,
+  Gauge,
 } from "lucide-react";
 import { api, ApiError, json } from "@/lib/api";
 import { money, moneyInput, parseMoney, parseSignedMoney } from "@/lib/money";
@@ -86,6 +87,10 @@ export function AddScreen() {
       )}
       <div className="add-more">
         <span>Chcesz zrobić coś jeszcze?</span>
+        <Link className="text-button" href="/liczniki">
+          <Gauge size={17} />
+          Odczyt licznika
+        </Link>
         <Link className="text-button" href="/zakupy?add=1">
           <ShoppingBasket size={17} />
           Produkt na listę zakupów
@@ -421,6 +426,23 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
           </button>
         }
       />
+      <p className="muted small record-author">
+        Dodano przez:{" "}
+        <strong>{receipt.created_by_name || "Nieznany autor"}</strong>
+        {receipt.created_at && (
+          <>
+            {" "}
+            ·{" "}
+            <time dateTime={receipt.created_at}>
+              {new Date(receipt.created_at).toLocaleString("pl-PL", {
+                timeZone: "Europe/Warsaw",
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
+            </time>
+          </>
+        )}
+      </p>
       {readOnly && (
         <Link
           className="button secondary"

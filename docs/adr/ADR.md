@@ -1,5 +1,9 @@
 # Architecture Decision Records
 
+- [ADR-019: Utility meter photographs and usage](ADR-019-utility-meter-readings.md).
+
+- [ADR-018: Entry authorship and household activity](ADR-018-entry-authorship-activity.md).
+
 - [ADR-017: Repeatable receipt OCR and provider diagnostics](ADR-017-repeatable-receipt-ocr.md).
 
 - [ADR-016: Administrator-assisted account recovery](ADR-016-administrator-password-recovery.md).

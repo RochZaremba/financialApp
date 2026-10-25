@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .admin import router as admin_router
+from .activity import router as activity_router
+from .meters import router as meters_router
 from .db import get_db
 from .domain import (
     account_data,
@@ -22,6 +24,7 @@ from .domain import (
     budget_data,
     create_transaction,
     create_record,
+    creator_names,
     fingerprint,
     goal_data,
     learn,
@@ -63,6 +66,9 @@ from .models import (
     InventoryItem,
     ShoppingItem,
     Member,
+    Meter,
+    MeterPhoto,
+    MeterReading,
     Mutation,
     Period,
     Receipt,
@@ -103,6 +109,8 @@ app = FastAPI(title="Dom · budżet domowy", version="1.0.0")
 app.add_middleware(RequestBodyLimit)
 app.include_router(shopping_router)
 app.include_router(admin_router)
+app.include_router(activity_router)
+app.include_router(meters_router)
 Db = Annotated[Session, Depends(get_db)]
 Person = Annotated[User, Depends(current_user)]
 Membership = Annotated[Member, Depends(household_member)]
@@ -281,6 +289,7 @@ def overview(household_id: str, month: str, member: Membership, db: Db):
         )
     )
     accounts = account_data(db, household_id)
+    authors = creator_names(db, transactions)
     valuation = value_accounts(accounts)
     return dict(
         account_valuation=valuation,
@@ -291,7 +300,7 @@ def overview(household_id: str, month: str, member: Membership, db: Db):
         accounts=accounts,
         goals=goal_data(db, household_id),
         tasks=tasks,
-        recent=[transaction_data(db, t) for t in transactions],
+        recent=[transaction_data(db, t, authors) for t in transactions],
         recurring=recurring_data(db, household_id, month),
         reminders=reminders(db, household_id, today()),
         rules=[serialize(r) for r in records(db, ClassificationRule, household_id)],
@@ -564,7 +573,8 @@ def transaction_list(
         "amount_asc": Transaction.amount.asc(),
     }[sort]
     txs = list(db.scalars(query.order_by(ordering, Transaction.created_at.desc(), Transaction.id).offset(offset).limit(limit + 1)))
-    return {"items": [transaction_data(db, t) for t in txs[:limit]], "has_more": len(txs) > limit}
+    authors = creator_names(db, txs[:limit])
+    return {"items": [transaction_data(db, t, authors) for t in txs[:limit]], "has_more": len(txs) > limit}
 
 
 @app.get("/households/{household_id}/transactions/{transaction_id}")
@@ -787,6 +797,7 @@ def receipt_data(db, receipt):
     )
     return dict(
         **serialize(receipt),
+        created_by_name=creator_names(db, [receipt]).get(receipt.created_by),
         ocr_attempts=[
             dict(
                 **{k: v for k, v in serialize(attempt).items() if k not in ("key", "result")}, result=attempt.result if index == 0 else None
@@ -1162,6 +1173,9 @@ def analytics(household_id: str, month: str, member: Membership, db: Db):
 @app.get("/households/{household_id}/export")
 def export(household_id: str, member: Membership, db: Db):
     models = [
+        Meter,
+        MeterPhoto,
+        MeterReading,
         ShoppingItem,
         InventoryItem,
         BudgetSettlement,
@@ -1190,6 +1204,7 @@ def export(household_id: str, member: Membership, db: Db):
         "money_unit": "grosz",
         "account_money_unit": "1/100 of each account currency",
         "inventory_quantity_unit": "1/1000 of declared unit",
+        "meter_value_unit": "1/1000 of declared meter unit",
     }
     for model in models:
         data[model.__tablename__] = [serialize(r) for r in records(db, model, household_id)]
@@ -1204,8 +1219,12 @@ def household_delete(household_id: str, data: HouseholdInput, member: Membership
     if data.name != household.name:
         raise HTTPException(422, "Wpisz dokładną nazwę gospodarstwa.")
     paths = [storage_path(r.path) for r in records(db, Receipt, household_id)]
+    paths += [storage_path(r.path) for r in records(db, MeterPhoto, household_id)]
     # Delete in dependency order to preserve FK integrity.
     for model in [
+        MeterReading,
+        MeterPhoto,
+        Meter,
         ShoppingItem,
         InventoryItem,
         BudgetSettlement,

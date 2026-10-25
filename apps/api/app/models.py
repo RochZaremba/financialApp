@@ -252,6 +252,36 @@ class Receipt(Scoped, Base):
     __table_args__ = (CheckConstraint("total is null or total > 0"), CheckConstraint("status in ('draft','ready','confirmed','failed')"))
 
 
+class Meter(Scoped, Base):
+    __tablename__ = "meters"
+    name: Mapped[str] = mapped_column(String(80))
+    unit: Mapped[str] = mapped_column(String(8))
+    interval_days: Mapped[int] = mapped_column(Integer, default=30)
+    __table_args__ = (CheckConstraint("unit in ('kWh','m3','GJ')"), CheckConstraint("interval_days between 0 and 365"))
+
+
+class MeterPhoto(Scoped, Base):
+    __tablename__ = "meter_photos"
+    meter_id: Mapped[str] = mapped_column(ForeignKey("meters.id", ondelete="CASCADE"), index=True)
+    path: Mapped[str] = mapped_column(String(200))
+    image_hash: Mapped[str] = mapped_column(String(64))
+    key: Mapped[str] = mapped_column(String(100))
+    provider: Mapped[str] = mapped_column(String(20))
+    model: Mapped[str] = mapped_column(String(120))
+    proposal: Mapped[dict | None] = mapped_column(JSON(), nullable=True)
+    diagnostics: Mapped[dict] = mapped_column(JSON(), default=dict)
+    __table_args__ = (UniqueConstraint("meter_id", "key"),)
+
+
+class MeterReading(Scoped, Base):
+    __tablename__ = "meter_readings"
+    meter_id: Mapped[str] = mapped_column(ForeignKey("meters.id", ondelete="CASCADE"), index=True)
+    date: Mapped[DateValue] = mapped_column(Date)
+    value: Mapped[int] = mapped_column(BigInteger)
+    photo_id: Mapped[str | None] = mapped_column(ForeignKey("meter_photos.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (UniqueConstraint("meter_id", "date"), CheckConstraint("value between 0 and 1000000000000"))
+
+
 class ReceiptOCRAttempt(Scoped, Base):
     __tablename__ = "receipt_ocr_attempts"
     receipt_id: Mapped[str] = mapped_column(ForeignKey("receipts.id", ondelete="CASCADE"), index=True)
