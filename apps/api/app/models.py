@@ -109,6 +109,18 @@ class Invitation(Scoped, Base):
     used_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
+class MCPConnection(Scoped, Base):
+    __tablename__ = "mcp_connections"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    access: Mapped[str] = mapped_column(String(10))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (CheckConstraint("access in ('read','write')"),)
+
+
 class Account(Scoped, Base):
     __tablename__ = "accounts"
     name: Mapped[str] = mapped_column(String(80))

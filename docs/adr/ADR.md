@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+- [ADR-020: Household access through MCP](ADR-020-mcp-household-access.md).
+
 - [ADR-019: Utility meter photographs and usage](ADR-019-utility-meter-readings.md).
 
 - [ADR-018: Entry authorship and household activity](ADR-018-entry-authorship-activity.md).

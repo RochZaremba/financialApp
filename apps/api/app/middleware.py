@@ -16,6 +16,8 @@ class RequestBodyLimit:
         headers = dict(scope["headers"])
         multipart = headers.get(b"content-type", b"").lower().startswith(b"multipart/form-data")
         limit = MAX_IMAGE_BYTES + 65536 if multipart else 128 * 1024
+        if scope.get("path", "").rstrip("/") == "/mcp":
+            limit = 14 * 1024 * 1024
         size = headers.get(b"content-length")
         if size and (not size.isdigit() or int(size) > limit):
             return await JSONResponse({"detail": "Żądanie jest za duże."}, status_code=413)(scope, receive, send)
