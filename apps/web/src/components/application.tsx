@@ -37,6 +37,7 @@ import {
   ShoppingBasket,
   Leaf,
   Users,
+  Gauge,
   ArrowRight,
 } from "lucide-react";
 import { api, ApiError, json } from "@/lib/api";
@@ -61,6 +62,7 @@ import {
 import { ShoppingScreen } from "./shopping-screen";
 import { AdminScreen } from "./admin-screen";
 import { ActivityScreen } from "./activity-screen";
+import { MetersScreen } from "./meters-screen";
 
 const nav = [
   { href: "/", label: "Pulpit", icon: House },
@@ -71,6 +73,7 @@ const nav = [
   { href: "/analiza", label: "Analiza", icon: ChartNoAxesCombined },
 ];
 const secondary = [
+  { href: "/liczniki", label: "Liczniki", icon: Gauge },
   { href: "/aktywnosc", label: "Aktywność", icon: Users },
   { href: "/zakupy", label: "Zakupy i zapasy", icon: ShoppingBasket },
   { href: "/cykliczne", label: "Stałe wydatki", icon: Repeat2 },
@@ -261,6 +264,8 @@ function Authenticated() {
       <AnalyticsScreen />
     ) : path === "/aktywnosc" ? (
       <ActivityScreen />
+    ) : path === "/liczniki" ? (
+      <MetersScreen />
     ) : path === "/inbox" ? (
       <InboxScreen />
     ) : path === "/konta" ? (

@@ -82,3 +82,10 @@ Shopping/navigation acceptance: verified locally after two consecutive clean 9/9
 - Household Activity shows monthly/all-time counts of saved receipts (including drafts), expenses and income and exact expense/income amounts per recorder. All counts use creation time in Europe/Warsaw, not purchase date. Receipt totals are not added to expenses.
 - Include current members with zero entries and historical authors; do not expose email addresses. Another household's members cannot read the page's API or influence its aggregates.
 - Desktop/mobile navigation, readable four-viewport layouts, loading/empty/retry states, and two consecutive clean real-user browser loops.
+# Optional utility meters
+
+- Household-only named meters declare kWh/m³/GJ and an optional in-app reminder interval. Nothing creates a financial transaction or a background paid call.
+- Private photographs produce reviewed Gemini/OpenAI proposals; users explicitly save/correct readings or enter them manually. Failures retain photos and safe codes; repeated/lost-response uploads do not charge again.
+- Exact integer-thousandth readings remain monotonic, one per meter/date, including out-of-order edits. Changes use revisions; meter replacement means a new meter. Original authors remain recorded.
+- Charts use actual adjacent readings and elapsed days, show zero correctly and require two readings. No inferred daily samples or invented starting zero. Monthly cadence is a plan, not a required sampling interval.
+- Export, deletion, migration preservation, household authorization, bounded history, four viewports, accessibility, empty/loading/error/manual/review states and two consecutive clean browser loops.

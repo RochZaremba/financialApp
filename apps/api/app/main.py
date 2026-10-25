@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .admin import router as admin_router
 from .activity import router as activity_router
+from .meters import router as meters_router
 from .db import get_db
 from .domain import (
     account_data,
@@ -65,6 +66,9 @@ from .models import (
     InventoryItem,
     ShoppingItem,
     Member,
+    Meter,
+    MeterPhoto,
+    MeterReading,
     Mutation,
     Period,
     Receipt,
@@ -106,6 +110,7 @@ app.add_middleware(RequestBodyLimit)
 app.include_router(shopping_router)
 app.include_router(admin_router)
 app.include_router(activity_router)
+app.include_router(meters_router)
 Db = Annotated[Session, Depends(get_db)]
 Person = Annotated[User, Depends(current_user)]
 Membership = Annotated[Member, Depends(household_member)]
@@ -1168,6 +1173,9 @@ def analytics(household_id: str, month: str, member: Membership, db: Db):
 @app.get("/households/{household_id}/export")
 def export(household_id: str, member: Membership, db: Db):
     models = [
+        Meter,
+        MeterPhoto,
+        MeterReading,
         ShoppingItem,
         InventoryItem,
         BudgetSettlement,
@@ -1196,6 +1204,7 @@ def export(household_id: str, member: Membership, db: Db):
         "money_unit": "grosz",
         "account_money_unit": "1/100 of each account currency",
         "inventory_quantity_unit": "1/1000 of declared unit",
+        "meter_value_unit": "1/1000 of declared meter unit",
     }
     for model in models:
         data[model.__tablename__] = [serialize(r) for r in records(db, model, household_id)]
@@ -1210,8 +1219,12 @@ def household_delete(household_id: str, data: HouseholdInput, member: Membership
     if data.name != household.name:
         raise HTTPException(422, "Wpisz dokładną nazwę gospodarstwa.")
     paths = [storage_path(r.path) for r in records(db, Receipt, household_id)]
+    paths += [storage_path(r.path) for r in records(db, MeterPhoto, household_id)]
     # Delete in dependency order to preserve FK integrity.
     for model in [
+        MeterReading,
+        MeterPhoto,
+        Meter,
         ShoppingItem,
         InventoryItem,
         BudgetSettlement,

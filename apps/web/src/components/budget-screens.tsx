@@ -22,6 +22,7 @@ import {
   Trash2,
   ShoppingBasket,
   Users,
+  Gauge,
 } from "lucide-react";
 import { api, json } from "@/lib/api";
 import {
@@ -1490,6 +1491,12 @@ export function MoreScreen() {
             label: "Aktywność domowników",
             desc: "Kto dodaje paragony, wydatki i wpływy",
             icon: Users,
+          },
+          {
+            href: "/liczniki",
+            label: "Liczniki i zużycie",
+            desc: "Zdjęcia odczytów, wykresy i Wasz plan pomiarów",
+            icon: Gauge,
           },
           {
             href: "/zakupy",

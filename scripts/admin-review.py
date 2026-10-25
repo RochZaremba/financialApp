@@ -80,6 +80,8 @@ def main():
             review = "scripts/ocr-review.mjs" if "--ocr" in sys.argv else "scripts/admin-review.mjs"
             if "--activity" in sys.argv:
                 review = "scripts/activity-review.mjs"
+            if "--meters" in sys.argv:
+                review = "scripts/meters-review.mjs"
             subprocess.run(["node", review, str(number)], cwd=ROOT, env=environment, check=True)
         if "--regression" in sys.argv:
             arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
