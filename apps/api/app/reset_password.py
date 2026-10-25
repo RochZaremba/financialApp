@@ -6,7 +6,7 @@ import sys
 from sqlalchemy import delete, select
 
 from .db import SessionLocal
-from .models import SessionToken, User
+from .models import MCPConnection, SessionToken, User
 from .security import hasher
 
 
@@ -22,8 +22,9 @@ def main():
             raise SystemExit("User not found.")
         user.password_hash = hasher.hash(password)
         db.execute(delete(SessionToken).where(SessionToken.user_id == user.id))
+        db.execute(delete(MCPConnection).where(MCPConnection.user_id == user.id))
         db.commit()
-    print("Password changed; all previous sessions revoked.")
+    print("Password changed; all previous sessions and AI connections revoked.")
 
 
 if __name__ == "__main__":

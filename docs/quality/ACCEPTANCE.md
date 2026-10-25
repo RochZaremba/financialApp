@@ -89,3 +89,12 @@ Shopping/navigation acceptance: verified locally after two consecutive clean 9/9
 - Exact integer-thousandth readings remain monotonic, one per meter/date, including out-of-order edits. Changes use revisions; meter replacement means a new meter. Original authors remain recorded.
 - Charts use actual adjacent readings and elapsed days, show zero correctly and require two readings. No inferred daily samples or invented starting zero. Monthly cadence is a plan, not a required sampling interval.
 - Export, deletion, migration preservation, household authorization, bounded history, four viewports, accessibility, empty/loading/error/manual/review states and two consecutive clean browser loops.
+# MCP connections
+
+- Named, hashed, expiring connection keys are created only by a logged-in household member after password confirmation.
+- A connection is limited to its creator and one household; read-only keys cannot mutate data.
+- Standard MCP initialization/list/call works with the official client and existing domain validation/idempotency.
+- Meter photo proposals require separate confirmation/save; arbitrary URL/file access is unavailable.
+- Disconnection, expiry, membership removal and administrator password reset remove access.
+- Credentials are not returned by listing/export and are excluded from audit arguments/screenshots.
+- Connection UI is keyboard accessible, has explicit copy/revoke/error states and works at 390/430/768/1440 widths.

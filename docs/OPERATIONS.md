@@ -179,3 +179,8 @@ Pierwszy wpis jest punktem odniesienia. Od drugiego wykres pokazuje różnice i 
 Plan odczytów ustawia odstęp 0–365 dni od ostatniego datowanego pomiaru. 0 wyłącza przypomnienie. Komunikat jest widoczny na ekranie liczników, bez push/e-maili. Zdjęcia korzystają z istniejącego prywatnego wolumenu/backupów zdjęć; usunięcie gospodarstwa usuwa również dane i pliki liczników. Migracja 012 jest addytywna i odmawia downgrade z istniejącą historią.
 
 Izolowany przegląd: `CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium .venv/bin/python scripts/admin-review.py --meters`. Używa wyłącznie dokładnego syntetycznego zdjęcia `fixtures/meter.png` w trybie fixture, bez płatnych wywołań. Inne zdjęcia nie otrzymują wymyślonego odczytu. Wymaga aktualnego buildu i zatrzymanych lokalnych serwerów.
+# AI connections (MCP)
+
+Household members manage their own named connections in Ustawienia domu → Połączenia z AI. Keys are shown once, hashed in the database, scoped to one creator/household and valid for at most 90 days. Revoke a lost key in the panel; administrator or trusted-host password reset invalidates that user's connections too. Read/write keys can modify/delete household data with the creator's normal permissions. Account administration and invitations are excluded.
+
+Use `/api/mcp` (no trailing slash), Streamable HTTP and a Bearer header. [MCP setup](MCP.md) includes the Codex configuration, units, photo review and current OAuth limitation. The existing internal Docker upstream `api:8000` is explicitly permitted by the MCP host check; arbitrary hosts/origins remain blocked. No SSH/database exposure or server topology change is needed.

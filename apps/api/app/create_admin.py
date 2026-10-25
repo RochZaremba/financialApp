@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy import delete, select
 
 from .db import SessionLocal
-from .models import SessionToken, User
+from .models import MCPConnection, SessionToken, User
 from .schemas import Credentials
 from .security import hasher
 
@@ -38,6 +38,7 @@ def main():
             db.flush()
         user.is_admin = True
         db.execute(delete(SessionToken).where(SessionToken.user_id == user.id))
+        db.execute(delete(MCPConnection).where(MCPConnection.user_id == user.id))
         db.commit()
     print("Nadano uprawnienia administratora. Zaloguj się ponownie i otwórz /administrator.")
 

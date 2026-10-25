@@ -17,6 +17,27 @@ hasher = PasswordHash.recommended()
 DUMMY_HASH = hasher.hash("dummy-password-for-timing-protection")
 _attempts: dict[str, deque] = defaultdict(deque)
 _lock = Lock()
+MCP_MODULES = frozenset(
+    {
+        "",
+        "overview",
+        "budget",
+        "categories",
+        "transactions",
+        "goals",
+        "accounts",
+        "recurring",
+        "reminders",
+        "receipts",
+        "rules",
+        "analytics",
+        "export",
+        "surplus-policy",
+        "shopping",
+        "activity",
+        "meters",
+    }
+)
 
 
 def digest(value: str):
@@ -47,6 +68,22 @@ def set_session(db: Session, user: User, response: Response):
 
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    if request.headers.get("authorization"):
+        from .connections import connection_auth
+
+        scheme, _, raw = request.headers["authorization"].partition(" ")
+        if scheme.lower() != "bearer":
+            raise HTTPException(401, "Wymagany klucz Bearer.")
+        grant = connection_auth(db, raw)
+        prefix = f"/households/{grant.household_id}"
+        path = request.url.path
+        suffix = path[len(prefix) :].strip("/").split("/", 1)[0]
+        if not (path == prefix or path.startswith(prefix + "/")) or suffix not in MCP_MODULES:
+            raise HTTPException(403, "Klucz AI nie pozwala na tę operację.")
+        if request.method not in ("GET", "HEAD") and grant.access != "write":
+            raise HTTPException(403, "To połączenie pozwala tylko na odczyt.")
+        rate_limit(f"mcp-api:{grant.id}", 120)
+        return db.get(User, grant.user_id)
     raw = request.cookies.get("dom_session")
     session = db.get(SessionToken, digest(raw)) if raw else None
     if not session or session.expires_at <= datetime.now(timezone.utc):

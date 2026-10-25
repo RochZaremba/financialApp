@@ -16,6 +16,7 @@ from .config import settings
 from .admin import router as admin_router
 from .activity import router as activity_router
 from .meters import router as meters_router
+from .connections import router as connections_router
 from .db import get_db
 from .domain import (
     account_data,
@@ -111,6 +112,7 @@ app.include_router(shopping_router)
 app.include_router(admin_router)
 app.include_router(activity_router)
 app.include_router(meters_router)
+app.include_router(connections_router)
 Db = Annotated[Session, Depends(get_db)]
 Person = Annotated[User, Depends(current_user)]
 Membership = Annotated[Member, Depends(household_member)]
@@ -127,7 +129,8 @@ async def security_headers(request: Request, call_next):
         if request.headers.get("sec-fetch-site") == "cross-site":
             return JSONResponse({"detail": "Niedozwolone żądanie."}, status_code=403)
         size = request.headers.get("content-length")
-        if size and (not size.isdigit() or int(size) > MAX_IMAGE_BYTES + 65536):
+        limit = 14 * 1024 * 1024 if request.url.path.rstrip("/") == "/mcp" else MAX_IMAGE_BYTES + 65536
+        if size and (not size.isdigit() or int(size) > limit):
             return JSONResponse({"detail": "Plik jest za duży (maks. 10 MB)."}, status_code=413)
     response = await call_next(request)
     response.headers["Cache-Control"] = "no-store"
@@ -1296,3 +1299,9 @@ def budget_proposal(household_id: str, month: str, data: ProposalRequest, member
     month_valid(month)
     rate_limit("budget-proposal:" + household_id + ":" + member.user_id, 5)
     return proposal(db, household_id, month, data)
+
+
+# Install after all domain routes so the MCP catalog uses the final API contract.
+from .mcp_server import install_mcp  # noqa: E402
+
+install_mcp(app)

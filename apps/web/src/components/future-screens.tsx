@@ -44,6 +44,7 @@ import {
   Submit,
 } from "./ui";
 import { ReminderPanel } from "./reminder-panel";
+import { ConnectionsPanel } from "./connections-panel";
 import { PageHeading } from "./budget-screens";
 
 export function GoalsScreen() {
@@ -1053,6 +1054,7 @@ export function SettingsScreen({ logout }: { logout: () => void }) {
           </button>
         </Card>
       </div>
+      <ConnectionsPanel key={household} />
       {category && (
         <CategoryForm
           key={category === "new" ? "new" : category.id}

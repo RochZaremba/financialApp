@@ -3,7 +3,7 @@ const config: NextConfig = {
   devIndicators: false,
   experimental: {
     proxyTimeout: 120_000,
-    proxyClientMaxBodySize: "11mb",
+    proxyClientMaxBodySize: "14mb",
   },
   async rewrites() {
     return [

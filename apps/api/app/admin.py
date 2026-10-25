@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import PasswordResetEvent, SessionToken, User, ReceiptOCRAttempt
+from .models import MCPConnection, PasswordResetEvent, SessionToken, User, ReceiptOCRAttempt
 from .schemas import Credentials
 from .security import current_user, hasher, rate_limit
 
@@ -74,6 +74,7 @@ def reset_password(data: PasswordReset, actor: Annotated[User, Depends(administr
     target.password_hash = hasher.hash(data.password)
     target.updated_by = actor.id
     db.execute(delete(SessionToken).where(SessionToken.user_id == target.id))
+    db.execute(delete(MCPConnection).where(MCPConnection.user_id == target.id))
     db.add(PasswordResetEvent(actor_id=actor.id, target_id=target.id, created_by=actor.id))
     db.commit()
     return {"ok": True}

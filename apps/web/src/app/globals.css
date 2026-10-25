@@ -4899,3 +4899,61 @@ input.meter-file-input {
     flex-direction: column;
   }
 }
+
+.connections-panel {
+  margin-top: 24px;
+}
+.connections-panel > p {
+  margin: 12px 0;
+}
+.connections-panel > .button {
+  margin: 12px 0;
+}
+.connections-panel form,
+.connections-panel .notice {
+  margin-top: 20px;
+}
+.connections-panel fieldset {
+  display: grid;
+  gap: 16px;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.connections-panel .notice {
+  display: block;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+.connections-panel input[readonly] {
+  font-family: monospace;
+  font-size: 13px;
+}
+.connection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.connection-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.connection-row small {
+  display: block;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.connection-row > button {
+  flex-shrink: 0;
+}
+
+.connections-panel .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
