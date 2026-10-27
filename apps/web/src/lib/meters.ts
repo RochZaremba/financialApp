@@ -20,6 +20,12 @@ export type MeterPhoto = {
 export type MeterReading = {
   id: string;
   date: string;
+  time: string | null;
+  created_at: string;
+  activities: Partial<Record<ActivityKey, boolean>>;
+  note: string;
+  from_time: string | null;
+  elapsed_seconds: number | null;
   value: number;
   photo_id: string | null;
   updated_at: string;
@@ -29,6 +35,41 @@ export type MeterReading = {
   average: number | null;
   from_date: string | null;
 };
+
+export const meterActivities = {
+  cooking: "Gotowanie",
+  oven: "Piekarnik",
+  washing_machine: "Pralka",
+  dishwasher: "Zmywarka",
+} as const;
+export type ActivityKey = keyof typeof meterActivities;
+export function warsawClock(now = new Date()): string {
+  return new Intl.DateTimeFormat("pl-PL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "Europe/Warsaw",
+  }).format(now);
+}
+export function readingMoment(date: string, time: string | null): string {
+  return `${meterDate(date)} · ${time || "godzina nieznana"}`;
+}
+export function readingDuration(
+  row: Pick<MeterReading, "elapsed_seconds" | "days">,
+): string {
+  if (row.elapsed_seconds == null)
+    return `${meterDays(row.days ?? 0)} (wg dat)`;
+  const minutes = Math.floor(row.elapsed_seconds / 60);
+  return `${Math.floor(minutes / 60)} godz.${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
+}
+export function activitySummary(
+  activities: MeterReading["activities"] = {},
+): string {
+  return (Object.keys(meterActivities) as ActivityKey[])
+    .filter((key) => typeof activities[key] === "boolean")
+    .map((key) => `${meterActivities[key]}: ${activities[key] ? "tak" : "nie"}`)
+    .join(" · ");
+}
 export type MeterDetail = {
   meter: Meter;
   readings: MeterReading[];

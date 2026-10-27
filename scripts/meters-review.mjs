@@ -90,12 +90,17 @@ try {
       });
     }
   }
+  // Keep the original date-only flow deterministic; exact clocks/context have a separate review.
+  async function saveWithoutClock() {
+    await page.getByLabel("Godzina pomiaru", { exact: true }).fill("");
+    await page
+      .getByRole("button", { name: "Zapisz odczyt", exact: true })
+      .click();
+  }
   await review("empty");
   await page.getByLabel("Data odczytu", { exact: true }).fill(day(-60));
   await page.getByLabel("Stan licznika (kWh)", { exact: true }).fill("12000");
-  await page
-    .getByRole("button", { name: "Zapisz odczyt", exact: true })
-    .click();
+  await saveWithoutClock();
   await expect(page.locator(".meter-history article")).toHaveCount(1);
   assert.equal((await detail()).readings[0].consumption, null);
   await page.getByLabel("Data odczytu", { exact: true }).fill(day(-30));
@@ -118,18 +123,14 @@ try {
   await expect(
     page.getByLabel("Stan licznika (kWh)", { exact: true }),
   ).toHaveValue("12345,678");
-  await page
-    .getByRole("button", { name: "Zapisz odczyt", exact: true })
-    .click();
+  await saveWithoutClock();
   await expect(page.locator(".meter-history article")).toHaveCount(2);
   assert.equal((await detail()).readings[1].consumption, 345678);
   await page.getByLabel("Data odczytu", { exact: true }).fill(today);
   await page
     .getByLabel("Stan licznika (kWh)", { exact: true })
     .fill("12345,678");
-  await page
-    .getByRole("button", { name: "Zapisz odczyt", exact: true })
-    .click();
+  await saveWithoutClock();
   await expect(page.locator(".meter-history article")).toHaveCount(3);
   assert.equal((await detail()).readings[2].consumption, 0);
   await page
@@ -168,35 +169,27 @@ try {
     page.getByLabel("Stan licznika (kWh)", { exact: true }),
   ).toHaveValue("12345,678");
   await review("manual-fallback");
-  await page
-    .getByRole("button", { name: "Zapisz odczyt", exact: true })
-    .click();
+  await saveWithoutClock();
   await expect(page.locator(".meter-history article")).toHaveCount(4);
   await page
     .getByRole("button", { name: `Popraw odczyt ${day(-60)}`, exact: true })
     .click();
   await page.getByLabel("Stan licznika (kWh)", { exact: true }).fill("12001");
-  await page
-    .getByRole("button", { name: "Zapisz odczyt", exact: true })
-    .click();
+  await saveWithoutClock();
   await expect(
     page.getByRole("heading", { name: "Dodaj kolejny odczyt" }),
   ).toBeVisible();
   assert.equal((await detail()).readings[1].consumption, 344678);
   await page.getByLabel("Data odczytu", { exact: true }).fill(day(-1));
   await page.getByLabel("Stan licznika (kWh)", { exact: true }).fill("1");
-  await page
-    .getByRole("button", { name: "Zapisz odczyt", exact: true })
-    .click();
+  await saveWithoutClock();
   await expect(page.locator(".notice[role=alert]")).toContainText(
     "Stan nie pasuje",
   );
   await page
     .getByLabel("Stan licznika (kWh)", { exact: true })
     .fill("12345,678");
-  await page
-    .getByRole("button", { name: "Zapisz odczyt", exact: true })
-    .click();
+  await saveWithoutClock();
   await expect(page.locator(".meter-history article")).toHaveCount(5);
   page.once("dialog", (dialog) => dialog.accept());
   await page

@@ -1,11 +1,12 @@
 "use client";
 import { useState } from "react";
 import {
-  meterDate,
   meterUnit,
   readingNumber,
   averageNumber,
-  meterDays,
+  readingMoment,
+  readingDuration,
+  activitySummary,
   type MeterReading,
   type MeterUnit,
 } from "@/lib/meters";
@@ -76,7 +77,7 @@ export function MeterChart({
             <button
               type="button"
               className={`meter-bar-choice ${row.id === shown.id ? "selected" : ""}`}
-              aria-label={`${meterDate(row.from_date!)} – ${meterDate(row.date)}: ${label(row)} ${suffix}`}
+              aria-label={`${readingMoment(row.from_date!, row.from_time)} – ${readingMoment(row.date, row.time)}: ${label(row)} ${suffix}`}
               aria-pressed={row.id === shown.id}
               onClick={() => setSelected(row.id)}
             >
@@ -102,13 +103,21 @@ export function MeterChart({
           {label(shown)} {suffix}
         </strong>
         <span>
-          {meterDate(shown.from_date!)} – {meterDate(shown.date)} ·{" "}
-          {meterDays(shown.days!)}
+          {readingMoment(shown.from_date!, shown.from_time)} –{" "}
+          {readingMoment(shown.date, shown.time)} · {readingDuration(shown)}
         </span>
+        {activitySummary(shown.activities) && (
+          <p className="meter-context-text">
+            {activitySummary(shown.activities)}
+          </p>
+        )}
+        {shown.note && <p className="meter-context-text">{shown.note}</p>}
       </div>
       <p className="muted small">
         Każdy słupek obejmuje cały okres między odczytami. Średnia dzienna nie
         jest pomiarem każdego dnia.
+        {shown.elapsed_seconds == null &&
+          " Nieznana godzina jednego z odczytów — średnia liczona według dat."}
       </p>
     </Card>
   );

@@ -3,7 +3,7 @@
 import hashlib
 import os
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Annotated, Literal
 
@@ -13,7 +13,7 @@ from pydantic import Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from .config import settings
+from .config import WARSAW, settings
 from .db import get_db
 from .domain import audit, create_record, creator_names, scoped, serialize, today
 from .meter_vision import extract_meter
@@ -44,6 +44,11 @@ class ReadingInput(Schema):
     date: date
     value: int = Field(strict=True, ge=0, le=1_000_000_000_000)
     photo_id: str | None = Field(default=None, max_length=36)
+    time: str | None = Field(default=None, pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
+    activities: dict[Literal["cooking", "oven", "washing_machine", "dishwasher"], Annotated[bool, Field(strict=True)]] = Field(
+        default_factory=dict, max_length=4
+    )
+    note: str = Field(default="", max_length=240)
 
 
 class ReadingEdit(ReadingInput):
@@ -59,9 +64,24 @@ def locked_meter(db, member, identifier):
     return scoped(db, Meter, member.household_id, identifier, lock=True)
 
 
+def measurement_at(day, clock):
+    if not clock:
+        return None
+    naive = datetime.fromisoformat(f"{day.isoformat()}T{clock}:00")
+    first = naive.replace(tzinfo=WARSAW)
+    if first.astimezone(timezone.utc).astimezone(WARSAW).replace(tzinfo=None) != naive:
+        raise HTTPException(422, "Ta godzina nie istnieje po zmianie czasu. Sprawdź godzinę pomiaru.")
+    if first.utcoffset() != naive.replace(tzinfo=WARSAW, fold=1).utcoffset():
+        raise HTTPException(422, "Ta godzina występuje dwukrotnie po zmianie czasu. Wybierz jednoznaczną godzinę lub pozostaw ją pustą.")
+    return first.astimezone(timezone.utc)
+
+
 def validate_reading(db, meter, data, identifier=None):
     if not 2000 <= data.date.year <= 2100 or data.date > today():
         raise HTTPException(422, "Wybierz datę od 2000 roku, nie późniejszą niż dziś.")
+    measured = measurement_at(data.date, data.time)
+    if measured and measured > datetime.now(timezone.utc):
+        raise HTTPException(422, "Godzina pomiaru nie może być w przyszłości.")
     if data.photo_id and scoped(db, MeterPhoto, meter.household_id, data.photo_id).meter_id != meter.id:
         raise HTTPException(422, "Zdjęcie należy do innego licznika.")
     query = select(MeterReading).where(MeterReading.meter_id == meter.id, MeterReading.household_id == meter.household_id)
@@ -120,7 +140,18 @@ def meter_read(household_id: str, meter_id: str, member: Membership, db: Db):
     for row in rows:
         days = (row.date - previous.date).days if previous else None
         consumed = row.value - previous.value if previous else None
-        average = int((Decimal(consumed) / days).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) if days else None
+        end = measurement_at(row.date, row.time)
+        start = measurement_at(previous.date, previous.time) if previous else None
+        seconds = int((end - start).total_seconds()) if start and end else None
+        average = (
+            int(
+                (Decimal(consumed) * 86400 / seconds if seconds else Decimal(consumed) / days).quantize(
+                    Decimal("1"), rounding=ROUND_HALF_UP
+                )
+            )
+            if days
+            else None
+        )
         result.append(
             dict(
                 **serialize(row),
@@ -129,6 +160,8 @@ def meter_read(household_id: str, meter_id: str, member: Membership, db: Db):
                 days=days,
                 average=average,
                 from_date=previous.date if previous else None,
+                from_time=previous.time if previous else None,
+                elapsed_seconds=seconds,
             )
         )
         previous = row
@@ -180,8 +213,10 @@ def reading_edit(household_id: str, meter_id: str, reading_id: str, data: Readin
         raise HTTPException(404, "Nie znaleziono odczytu tego licznika.")
     if row.updated_at != data.expected_updated_at:
         raise HTTPException(409, "Odczyt został zmieniony. Odśwież ekran przed poprawką.")
+    if "time" not in data.model_fields_set:
+        data = data.model_copy(update={"time": row.time})
     validate_reading(db, meter, data, row.id)
-    for key, value in data.model_dump(exclude={"expected_updated_at"}).items():
+    for key, value in data.model_dump(exclude={"expected_updated_at"}, exclude_unset=True).items():
         setattr(row, key, value)
     row.updated_by = member.user_id
     audit(db, member, "meter.reading.edited", row.id)

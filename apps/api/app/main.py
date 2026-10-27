@@ -1208,6 +1208,7 @@ def export(household_id: str, member: Membership, db: Db):
         "account_money_unit": "1/100 of each account currency",
         "inventory_quantity_unit": "1/1000 of declared unit",
         "meter_value_unit": "1/1000 of declared meter unit",
+        "meter_time_zone": "Europe/Warsaw",
     }
     for model in models:
         data[model.__tablename__] = [serialize(r) for r in records(db, model, household_id)]

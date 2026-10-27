@@ -98,3 +98,11 @@ Shopping/navigation acceptance: verified locally after two consecutive clean 9/9
 - Disconnection, expiry, membership removal and administrator password reset remove access.
 - Credentials are not returned by listing/export and are excluded from audit arguments/screenshots.
 - Connection UI is keyboard accessible, has explicit copy/revoke/error states and works at 390/430/768/1440 widths.
+# Daily meter context
+
+- Measurement time defaults to the Warsaw clock and can be changed or omitted; creation time is shown separately.
+- Four optional yes/no activities and a 240-character note persist in history, selected chart intervals, export and MCP.
+- Unknown activity/time stays unknown; saving resets the form, editing preserves original authorship and omitted fields from older clients.
+- Exact daily averages use elapsed UTC seconds when both clocks are known, including 23/25-hour DST days; legacy date-only averages are labelled.
+- Invalid/future/ambiguous/nonexistent clocks fail clearly; existing daily uniqueness, monotonicity, revisions and idempotency stay enforced.
+- Additive migration preserves old readings/timestamps, permits previous clients and prevents destructive context downgrade.
