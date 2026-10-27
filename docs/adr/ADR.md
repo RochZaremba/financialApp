@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+- [ADR-021: Meter measurement time and context](ADR-021-meter-reading-time-context.md).
+
 - [ADR-020: Household access through MCP](ADR-020-mcp-household-access.md).
 
 - [ADR-019: Utility meter photographs and usage](ADR-019-utility-meter-readings.md).

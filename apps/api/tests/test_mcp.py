@@ -58,11 +58,17 @@ def test_sdk_initialize_catalog_and_real_reading_roundtrip(client, household):
     assert content(call(client, headers, "app_context"))["household_id"] == household["id"]
     meter = content(call(client, headers, "meter_create", data={"name": "Prąd", "unit": "kWh"}, idempotency_key=str(uuid.uuid4())))
     key = str(uuid.uuid4())
-    args = {"meter_id": meter["id"], "data": {"date": "2026-01-01", "value": 123456}, "idempotency_key": key}
+    args = {
+        "meter_id": meter["id"],
+        "data": {"date": "2026-01-01", "value": 123456, "time": "08:15", "activities": {"oven": False}, "note": "Bez pieczenia"},
+        "idempotency_key": key,
+    }
     first = content(call(client, headers, "reading_create", **args))
     assert content(call(client, headers, "reading_create", **args))["id"] == first["id"]
     detail = content(call(client, headers, "meter_read", meter_id=meter["id"]))
     assert detail["readings"][0]["value"] == 123456
+    assert detail["readings"][0]["time"] == "08:15" and detail["readings"][0]["activities"] == {"oven": False}
+    assert detail["readings"][0]["note"] == "Bez pieczenia"
     assert detail["readings"][0]["created_by_name"] == "Roch"
     with SessionLocal() as db:
         assert db.scalar(select(MeterReading)).created_by == detail["readings"][0]["created_by"]

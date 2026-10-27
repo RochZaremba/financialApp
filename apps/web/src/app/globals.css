@@ -4957,3 +4957,43 @@ input.meter-file-input {
   gap: 12px;
   margin-top: 16px;
 }
+
+.meter-form-card .meter-context {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  margin: 20px 0;
+  min-width: 0;
+}
+.meter-context legend {
+  font-weight: 650;
+  padding: 0 6px;
+}
+.meter-activity-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.meter-activity-row > div {
+  display: flex;
+  gap: 8px;
+}
+.meter-activity-row .button {
+  min-width: 60px;
+  transition: none;
+}
+.meter-context-text {
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 8px;
+}
+.meter-chart-detail {
+  flex-wrap: wrap;
+}
+.meter-chart-detail .meter-context-text {
+  flex-basis: 100%;
+}

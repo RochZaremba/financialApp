@@ -82,6 +82,8 @@ def main():
                 review = "scripts/activity-review.mjs"
             if "--meters" in sys.argv:
                 review = "scripts/meters-review.mjs"
+            if "--meter-context" in sys.argv:
+                review = "scripts/meter-context-review.mjs"
             if "--mcp" in sys.argv:
                 review = "scripts/mcp-review.mjs"
             subprocess.run(["node", review, str(number)], cwd=ROOT, env=environment, check=True)

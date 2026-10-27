@@ -24,12 +24,14 @@ Example request: “Find the electricity meter and save 12345.678 kWh for today.
   "arguments": {
     "meter_id": "<ID from meter_list>",
     "idempotency_key": "<new unique ID, reused on retries>",
-    "data": {"date": "<today in Europe/Warsaw>", "value": 12345678}
+    "data": {"date": "<today in Europe/Warsaw>", "value": 12345678, "time": "20:15", "activities": {"cooking": true, "oven": false}, "note": "Gotowanie obiadu"}
   }
 }
 ```
 
 Amounts are integer minor currency units (PLN grosze). Meter values are **thousandths** of the meter's unit. Readings must be nondecreasing and unique per day. Edit tools use the current `expected_updated_at`; stale edits fail. A read key cannot write even if the client lists write tools. Do not reuse a key for a different mutation.
+
+Reading `time` is optional HH:MM in Europe/Warsaw, distinct from the record's creation timestamp. Do not invent it for older photos. `activities` supports `cooking`, `oven`, `washing_machine`, `dishwasher` with strict boolean values; omit an unknown answer instead of setting false. Optional `note` allows up to 240 characters. Existing clients may omit these fields on edits without erasing context; explicit null time, empty activities or empty note clear the corresponding field. When both adjacent clocks are known, daily averages use elapsed UTC seconds; otherwise they retain the labelled calendar-date approximation.
 
 Photo tools accept `image_base64` containing a JPG/PNG/WebP image up to 10 MB decoded; neither URLs nor local paths are accepted. Images are sanitized and stored privately. Returned proposals require review and an explicit separate save/apply/finalize tool; never infer a reading from an unreadable photo. Existing AI provider limits/costs apply.
 

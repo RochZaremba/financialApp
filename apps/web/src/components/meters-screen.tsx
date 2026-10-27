@@ -6,10 +6,15 @@ import { api, json } from "@/lib/api";
 import {
   meterDate,
   averageNumber,
-  meterDays,
   meterUnit,
   parseReading,
   readingNumber,
+  readingMoment,
+  readingDuration,
+  warsawClock,
+  meterActivities,
+  activitySummary,
+  type ActivityKey,
   type Meter,
   type MeterDetail,
   type MeterPhoto,
@@ -192,7 +197,11 @@ function MeterView({ meterId }: { meterId: string }) {
           <strong>
             {last ? readingNumber(last.value) : "—"} {unit}
           </strong>
-          <small>{last ? meterDate(last.date) : "Dodaj pierwszy odczyt"}</small>
+          <small>
+            {last
+              ? readingMoment(last.date, last.time)
+              : "Dodaj pierwszy odczyt"}
+          </small>
         </Card>
         <Card>
           <span>Zużycie od poprzedniego odczytu</span>
@@ -203,7 +212,7 @@ function MeterView({ meterId }: { meterId: string }) {
           </strong>
           <small>
             {last?.days
-              ? `${meterDays(last.days)} · średnio ${averageNumber(last.average!, last.consumption!)} ${unit}/dzień`
+              ? `${readingDuration(last)} · średnio ${averageNumber(last.average!, last.consumption!)} ${unit}/dzień`
               : "Nie zakładamy początkowego stanu zero"}
           </small>
         </Card>
@@ -241,18 +250,32 @@ function MeterView({ meterId }: { meterId: string }) {
             {[...data.readings].reverse().map((row) => (
               <article key={row.id}>
                 <div>
-                  <time dateTime={row.date}>{meterDate(row.date)}</time>
+                  <time dateTime={row.date}>
+                    {readingMoment(row.date, row.time)}
+                  </time>
                   <strong>
                     {readingNumber(row.value)} {unit}
                   </strong>
                   <small>
                     {row.consumption == null
                       ? "Punkt początkowy"
-                      : `Zużycie: ${readingNumber(row.consumption)} ${unit} przez ${meterDays(row.days!)} `}
+                      : `Zużycie: ${readingNumber(row.consumption)} ${unit} przez ${readingDuration(row)} `}
                   </small>
                   <small>
                     Dodano przez: {row.created_by_name || "Nieznany autor"}
+                    {" · "}
+                    {new Intl.DateTimeFormat("pl-PL", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                      timeZone: "Europe/Warsaw",
+                    }).format(new Date(row.created_at))}
                   </small>
+                  {activitySummary(row.activities) && (
+                    <p className="meter-context-text">
+                      {activitySummary(row.activities)}
+                    </p>
+                  )}
+                  {row.note && <p className="meter-context-text">{row.note}</p>}
                   {row.photo_id && (
                     <a
                       href={`/api/households/${household}/meters/${meterId}/photos/${row.photo_id}`}
@@ -303,6 +326,13 @@ function ReadingForm({
   const query = useQueryClient();
   const command = useCommand();
   const [date, setDate] = useState(reading?.date || data.today);
+  const [time, setTime] = useState(() =>
+    reading ? reading.time || "" : warsawClock(),
+  );
+  const [activities, setActivities] = useState<MeterReading["activities"]>(
+    reading?.activities || {},
+  );
+  const [note, setNote] = useState(reading?.note || "");
   const [value, setValue] = useState(
     reading ? readingNumber(reading.value).replace(/\s/g, "") : "",
   );
@@ -360,6 +390,9 @@ function ReadingForm({
     }
     const payload = {
       date,
+      time: time || null,
+      activities,
+      note: note.trim(),
       value: parsed,
       photo_id: photo?.id || reading?.photo_id || null,
     };
@@ -380,6 +413,9 @@ function ReadingForm({
         close();
         setValue("");
         setDate(data.today);
+        setTime(warsawClock());
+        setActivities({});
+        setNote("");
         setPhoto(null);
         setFile(null);
         if (fileInput.current) fileInput.current.value = "";
@@ -510,6 +546,61 @@ function ReadingForm({
             hint="Do 3 miejsc po przecinku. Możesz poprawić cyfry z AI."
             required
           />
+          <Field
+            label="Godzina pomiaru"
+            type="time"
+            step={60}
+            value={time}
+            onChange={(event) => setTime(event.target.value)}
+            hint="Czas w Polsce. Możesz poprawić godzinę lub zostawić pustą, jeśli jej nie znasz."
+          />
+          <fieldset className="meter-context">
+            <legend>Co było włączone od poprzedniego odczytu?</legend>
+            <p className="muted small">
+              Opcjonalnie. Wybierz tak lub nie; kliknij ponownie, aby wyczyścić.
+            </p>
+            {(Object.entries(meterActivities) as [ActivityKey, string][]).map(
+              ([key, label]) => (
+                <div
+                  className="meter-activity-row"
+                  key={key}
+                  role="group"
+                  aria-label={label}
+                >
+                  <span>{label}</span>
+                  <div>
+                    {[true, false].map((value) => (
+                      <button
+                        type="button"
+                        key={String(value)}
+                        className={`button ${activities[key] === value ? "primary" : "secondary"}`}
+                        aria-pressed={activities[key] === value}
+                        aria-label={`${label}: ${value ? "tak" : "nie"}`}
+                        onClick={() =>
+                          setActivities((previous) => {
+                            const next = { ...previous };
+                            if (next[key] === value) delete next[key];
+                            else next[key] = value;
+                            return next;
+                          })
+                        }
+                      >
+                        {value ? "Tak" : "Nie"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ),
+            )}
+            <Field
+              label="Krótka notatka (opcjonalnie)"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              maxLength={240}
+              placeholder="Np. pieczenie chleba przez godzinę, goście"
+              hint={`${note.length}/240 znaków. Znaczniki pomagają porównywać okresy; nie mierzą zużycia konkretnego urządzenia.`}
+            />
+          </fieldset>
           <ErrorMessage error={command.error} />
           <Submit busy={command.busy}>Zapisz odczyt</Submit>
           {reading && (
