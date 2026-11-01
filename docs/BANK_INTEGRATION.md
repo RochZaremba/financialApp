@@ -24,6 +24,12 @@ Inne domostwa i dodatkowe osoby nie otrzymują bankowego panelu, feedu ani banko
 
 Pierwsza wersja księguje tylko PLN. Pozostałe waluty nie są przeliczane ani automatycznie importowane. Nie rozwiązuje automatycznie każdej rozbieżności historycznej; zapewnia źródło operacji i jawne uzgodnienie.
 
+## Nieudana synchronizacja
+
+W **Bank → Szczegóły błędu synchronizacji** znajdziesz etap, bezpieczny rodzaj i kod błędu, odpowiedź HTTP (jeśli wystąpiła), czas próby i czas jej trwania. Dane są zapisane w bazie i przetrwają restart API. Nie zawierają treści operacji, numerów rachunków, tokenów ani oryginalnych komunikatów dostawcy. W logach serwera pojawiają się wyłącznie dozwolone kody/etap/rodzaj/HTTP. Po udanej synchronizacji poprzedni błąd znika.
+
+Sześciogodzinny odstęp jest ustawiony w aplikacji i obowiązuje także po błędzie, bez zerowania zgody. Podczas oczekiwania **Synchronizuj teraz** jest nieaktywne; status odświeża się co 30 sekund przy otwartym ekranie. Ręczne żądanie przed terminem nie pobiera operacji i nie jest pokazywane jako sukces. Nieprzypisany rachunek nie uruchamia pobierania ani blokady. Starsze błędy sprzed migracji 016 nie mają odtworzonych szczegółów — pojawią się przy następnej nieudanej próbie. Poprawka diagnostyki sama nie ustala przyczyny wcześniejszego `SYNC_FAILED`.
+
 ## Sekrety, backup i odłączenie
 
 Konfiguracja domyślnie znajduje się w `RECEIPT_STORAGE/.bank/config.json`; opcjonalny `BANK_CONFIG_PATH` służy operatorowi. Katalog ma prawa 0700, pliki 0600: klucz RSA dostawcy, osobny klucz szyfrowania, klucz VAPID i konfiguracja wiążąca dom/dwie osoby. Sesje, identyfikatory rachunków dostawcy i subskrypcje w PostgreSQL są szyfrowane. W odpowiedziach widać tylko końcówki rachunków. Moduł bankowy nie dodaje narzędzi do ogólnego katalogu MCP. Eksport nigdy nie zawiera kluczy, sesji ani urządzeń.

@@ -371,6 +371,7 @@ class BankConnection(Scoped, Base):
     next_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    sync_diagnostic: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
 
 
 class BankAccount(Scoped, Base):

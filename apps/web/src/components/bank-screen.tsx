@@ -47,6 +47,15 @@ type Connection = {
   last_sync: string | null;
   next_sync: string | null;
   error_code: string | null;
+  sync_available: boolean;
+  sync_diagnostic: {
+    stage: string;
+    exception_type: string;
+    code: string;
+    http_status: number | null;
+    occurred_at: string;
+    duration_ms: number;
+  } | null;
 };
 type BankState =
   | { enabled: false; can_activate?: boolean }
@@ -61,13 +70,103 @@ type BankState =
       truncated: boolean;
       subscriptions: { id: string; created_at: string }[];
     };
-function useBank() {
+function useBank(live = false) {
   const { household } = useApp();
   return useQuery({
     queryKey: ["bank", household],
     queryFn: () => api<BankState>(`/households/${household}/bank`),
     staleTime: 15000,
+    refetchInterval: live ? 30000 : false,
   });
+}
+
+const syncStages: Record<string, string> = {
+  load_accounts: "Przygotowanie synchronizacji",
+  decrypt_account: "Odczyt zapisanego połączenia",
+  fetch_transactions: "Pobieranie operacji",
+  parse_transactions: "Sprawdzanie operacji",
+  fetch_balances: "Pobieranie salda",
+  parse_balances: "Sprawdzanie salda",
+  authorize_write: "Sprawdzanie dostępu przed zapisem",
+  save_entries: "Zapisywanie operacji",
+  save_balances: "Zapisywanie salda",
+  commit: "Zatwierdzanie zapisu",
+};
+
+function SyncFailure({ connection }: { connection: Connection }) {
+  const code = connection.error_code;
+  if (!code) return null;
+  const diagnostic = connection.sync_diagnostic;
+  const message = ["BANK_TIMEOUT", "ASPSP_TIMEOUT"].includes(code)
+    ? "Bank nie odpowiedział w wymaganym czasie."
+    : [
+          "EXPIRED_SESSION",
+          "SESSION_EXPIRED",
+          "REVOKED_SESSION",
+          "CLOSED_SESSION",
+        ].includes(code)
+      ? "Zgoda bankowa wygasła lub została cofnięta. Odnów połączenie."
+      : code === "ASPSP_RATE_LIMIT_EXCEEDED"
+        ? "Bank ograniczył liczbę prób pobierania."
+        : [
+              "INVALID_BANK_RESPONSE",
+              "INVALID_BANK_MOVEMENT",
+              "INVALID_BANK_AMOUNT",
+              "INVALID_BANK_DATE",
+            ].includes(code)
+          ? "Nie udało się odczytać danych otrzymanych z banku."
+          : "Synchronizacja nie powiodła się.";
+  return (
+    <div className="bank-sync-failure">
+      <p role="alert">{message} Poprzednie dane zachowano.</p>
+      <details className="bank-diagnostic">
+        <summary>Szczegóły błędu synchronizacji</summary>
+        {diagnostic ? (
+          <dl>
+            <div>
+              <dt>Etap</dt>
+              <dd>{syncStages[diagnostic.stage] || "Synchronizacja"}</dd>
+            </div>
+            <div>
+              <dt>Rodzaj błędu</dt>
+              <dd>{diagnostic.exception_type}</dd>
+            </div>
+            <div>
+              <dt>Kod</dt>
+              <dd>{diagnostic.code}</dd>
+            </div>
+            {diagnostic.http_status !== null && (
+              <div>
+                <dt>Odpowiedź HTTP</dt>
+                <dd>{diagnostic.http_status}</dd>
+              </div>
+            )}
+            <div>
+              <dt>Czas próby</dt>
+              <dd>{stamp(diagnostic.occurred_at)}</dd>
+            </div>
+            <div>
+              <dt>Czas trwania</dt>
+              <dd>
+                {new Intl.NumberFormat("pl-PL", {
+                  maximumFractionDigits: 1,
+                }).format(diagnostic.duration_ms / 1000)}{" "}
+                s
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <>
+            <p>Kod: {code}.</p>
+            <p>
+              Ta starsza próba nie ma zapisanych szczegółów. Pojawią się po
+              kolejnej nieudanej próbie.
+            </p>
+          </>
+        )}
+      </details>
+    </div>
+  );
 }
 function stamp(value: string | null) {
   return value
@@ -163,9 +262,10 @@ export function BankCallback({
 
 export function BankScreen() {
   const { household } = useApp();
-  const state = useBank();
+  const state = useBank(true);
   const command = useCommand();
   const [history, setHistory] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
   if (state.isPending) return <Skeleton />;
   if (state.isError)
     return (
@@ -190,6 +290,8 @@ export function BankScreen() {
   const data = state.data,
     base = `/households/${household}/bank`;
   const current = data.connections.find((c) => c.status === "active");
+  const latest =
+    current || data.connections.find((c) => c.status === "expired");
   const unreviewed = data.entries.filter((e) => !e.reviewed);
   async function connect() {
     await command.run(
@@ -199,10 +301,15 @@ export function BankScreen() {
     );
   }
   async function refresh() {
-    await command.run(
-      () => api<{ message: string }>(base + "/sync", { method: "POST" }),
-      "Sprawdzono synchronizację",
+    setSyncMessage("");
+    const result = await command.run(
+      () =>
+        api<{ message: string; failed: number }>(base + "/sync", {
+          method: "POST",
+        }),
+      null,
     );
+    if (result && !result.failed) setSyncMessage(result.message);
   }
   async function disconnect(connection: Connection) {
     if (
@@ -229,20 +336,17 @@ export function BankScreen() {
           Dostęp do informacji o rachunkach. Ta integracja nie zleca przelewów
           bankowych.
         </p>
-        {current ? (
+        {latest ? (
           <>
             <p>
               Ostatnia synchronizacja:{" "}
-              <strong>{stamp(current.last_sync)}</strong>
+              <strong>{stamp(latest.last_sync)}</strong>
             </p>
-            <p>Następna próba: {stamp(current.next_sync)}</p>
-            <p>Zgoda ważna do: {stamp(current.valid_until)}</p>
-            {current.error_code && (
-              <p role="alert">
-                Pobieranie nie powiodło się: {current.error_code}. Poprzednie
-                dane zachowano.
-              </p>
+            {current?.next_sync && (
+              <p>Następna próba: {stamp(current.next_sync)}</p>
             )}
+            <p>Zgoda ważna do: {stamp(latest.valid_until)}</p>
+            <SyncFailure connection={latest} />
           </>
         ) : (
           <p>
@@ -257,14 +361,15 @@ export function BankScreen() {
           </p>
         )}
         <p className="muted small">
-          Bank może ograniczać pobieranie w tle. Sprawdzamy nowe operacje co 6
-          godzin; powiadomienie przyjdzie po udostępnieniu operacji przez bank.
-          Blokady kartowe nie są księgowane jako wydatki.
+          Próby pobierania dzieli co najmniej 6 godzin, także po błędzie. W
+          produkcji kolejna próba ruszy automatycznie. Powiadomienie przyjdzie
+          po udostępnieniu operacji przez bank. Blokady kartowe nie są
+          księgowane jako wydatki.
         </p>
         {data.owner && (
           <div className="bank-actions">
             <button
-              className="button primary"
+              className={current ? "button secondary" : "button primary"}
               disabled={command.busy}
               onClick={connect}
             >
@@ -272,14 +377,20 @@ export function BankScreen() {
             </button>
             {current && (
               <button
-                className="button secondary"
-                disabled={command.busy}
+                className="button primary"
+                disabled={command.busy || !current.sync_available}
                 onClick={refresh}
               >
-                Synchronizuj według limitu
+                Synchronizuj teraz
               </button>
             )}
           </div>
+        )}
+        {syncMessage && <p role="status">{syncMessage}</p>}
+        {current && data.accounts.every((account) => !account.account_id) && (
+          <p className="muted">
+            Przypisz rachunek poniżej, aby rozpocząć pobieranie.
+          </p>
         )}
         {data.owner &&
           data.connections

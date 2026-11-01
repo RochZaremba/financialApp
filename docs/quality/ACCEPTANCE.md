@@ -116,3 +116,10 @@ Shopping/navigation acceptance: verified locally after two consecutive clean 9/9
 - Receipt-before-bank and bank-before-receipt yield one Transaction; explicit matching, no automatic equal-amount guess, stale/duplicate/category integrity guards.
 - Per-device Android/iOS PWA push opt-in, generic lock-screen text, durable retry/outbox, expired subscription cleanup, no history notification flood; task persists without push.
 - Safe export/deletion, additive migration/old-image compatibility, API/static/browser checks and two clean four-viewport axe/overflow loops. Actual consent/statement and physical phone delivery require post-deployment user authentication and verification.
+
+## Bank synchronization diagnostics
+
+- Persist the latest failure's allowlisted stage, exception category, provider/internal code, HTTP status when present, UTC occurrence time and duration. Never save/log raw exception text, traceback, provider JSON, account identifiers, statement content or credentials. Keep details household-authorized and collapsed in the UI.
+- Distinguish an actual failed attempt from waiting for the existing six-hour lease, an unmapped account and a successful import. No new provider call, lease extension or false success while waiting; no lease before an account is mapped. Disable premature UI retries and refresh status while the bank screen is open.
+- Roll back the complete batch after parse/write/commit failure before saving diagnostic metadata; preserve prior balances/history, current consent, session encryption, deduplication and financial invariants. A later successful import clears the failure.
+- Migration 016 is additive and compatible with the previous API; existing failures get no invented details and populated diagnostics cannot be discarded by downgrade. Synthetic HTTP/JSON/transport/parsing/database failures, secret-leak sentinels, authorization, migration preservation and two clean four-viewport browser loops are required.

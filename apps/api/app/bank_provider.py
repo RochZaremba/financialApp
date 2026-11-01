@@ -2,7 +2,6 @@
 
 import base64
 import json
-import re
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -16,6 +15,7 @@ import jwt
 from cryptography.fernet import Fernet
 
 from .config import settings
+from .bank_diagnostics import PROVIDER_CODES, exception_type, safe_code
 from .security import digest
 
 
@@ -66,16 +66,20 @@ def load_config():
 
 
 class BankError(Exception):
-    def __init__(self, code):
-        self.code = code
-        super().__init__(code)
+    def __init__(self, code, *, http_status=None, exception_type="BankError"):
+        self.code = safe_code(code)
+        self.http_status = http_status
+        self.exception_type = exception_type
+        super().__init__(self.code)
 
 
 class EnableBanking:
     def __init__(self, cfg):
         self.cfg = cfg
+        self.last_http_status = None
 
     def call(self, method, path, data=None, params=None):
+        self.last_http_status = None
         now = int(time.time())
         try:
             token = jwt.encode(
@@ -93,21 +97,36 @@ class EnableBanking:
                 timeout=30,
                 follow_redirects=False,
             )
+            self.last_http_status = response.status_code
+            if len(response.content) > 8 * 1024 * 1024:
+                raise BankError("RESPONSE_TOO_LARGE", http_status=response.status_code)
             if not response.is_success:
                 try:
-                    code = response.json().get("error", "")
+                    body = response.json()
+                    code = body.get("error") if isinstance(body, dict) else None
                 except ValueError:
-                    code = ""
-                raise BankError(code if isinstance(code, str) and re.fullmatch(r"[A-Z_]{1,60}", code) else f"HTTP_{response.status_code}")
+                    code = None
+                raise BankError(
+                    code if isinstance(code, str) and code in PROVIDER_CODES else f"HTTP_{response.status_code}",
+                    http_status=response.status_code,
+                )
             if response.status_code == 204:
                 return {}
-            if len(response.content) > 8 * 1024 * 1024:
-                raise BankError("RESPONSE_TOO_LARGE")
-            return response.json()
+            try:
+                result = response.json()
+            except ValueError:
+                raise BankError("INVALID_BANK_RESPONSE", http_status=response.status_code, exception_type="JSONDecodeError") from None
+            if not isinstance(result, dict):
+                raise BankError("INVALID_BANK_RESPONSE", http_status=response.status_code, exception_type="TypeError")
+            return result
         except BankError:
             raise
-        except Exception:
-            raise BankError("BANK_UNAVAILABLE") from None
+        except httpx.TimeoutException:
+            raise BankError("BANK_TIMEOUT", exception_type="TimeoutException") from None
+        except httpx.RequestError:
+            raise BankError("BANK_UNAVAILABLE", exception_type="RequestError") from None
+        except Exception as exc:
+            raise BankError("BANK_UNAVAILABLE", exception_type=exception_type(exc)) from None
 
     def banks(self):
         return self.call("GET", "/aspsps", params={"country": "PL", "service": "AIS"}).get("aspsps", [])
@@ -139,10 +158,15 @@ class EnableBanking:
             if continuation:
                 params["continuation_key"] = continuation
             result = self.call("GET", f"/accounts/{quote(uid, safe='')}/transactions", params=params)
-            rows.extend(result["transactions"])
+            page = result.get("transactions") if isinstance(result, dict) else None
+            if not isinstance(page, list) or any(not isinstance(item, dict) for item in page):
+                raise BankError("INVALID_BANK_RESPONSE", http_status=self.last_http_status, exception_type="TypeError")
+            rows.extend(page)
             if len(rows) > 10000:
                 raise BankError("HISTORY_TOO_LARGE")
             continuation = result.get("continuation_key")
+            if continuation is not None and (not isinstance(continuation, str) or len(continuation) > 16384):
+                raise BankError("INVALID_BANK_RESPONSE", http_status=self.last_http_status, exception_type="TypeError")
             if not continuation:
                 return rows
             if continuation in seen:
@@ -151,7 +175,11 @@ class EnableBanking:
         raise BankError("HISTORY_TOO_LARGE")
 
     def balances(self, uid):
-        return self.call("GET", f"/accounts/{quote(uid, safe='')}/balances").get("balances", [])
+        result = self.call("GET", f"/accounts/{quote(uid, safe='')}/balances")
+        balances = result.get("balances") if isinstance(result, dict) else None
+        if not isinstance(balances, list) or any(not isinstance(item, dict) for item in balances):
+            raise BankError("INVALID_BANK_RESPONSE", http_status=self.last_http_status, exception_type="TypeError")
+        return balances
 
 
 def minor_amount(value):

@@ -1,13 +1,17 @@
 """Durable booked movements, conservative reconciliation and private push outbox."""
 
 import json
+import logging
+import time
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException
 from pywebpush import WebPushException, webpush
 from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 
+from .bank_diagnostics import failure_diagnostic
 from .bank_provider import BankError, EnableBanking, minor_amount, movement, push_url_allowed
 from .config import WARSAW
 from .db import SessionLocal
@@ -108,32 +112,41 @@ def sync_connection(cfg, connection_id):
             connection.error_code = "EXPIRED_SESSION"
             db.commit()
             return False
-        connection.next_sync = now() + timedelta(hours=6)
+        accounts = list(
+            db.scalars(
+                select(BankAccount).where(
+                    BankAccount.connection_id == connection.id,
+                    BankAccount.household_id == cfg.household_id,
+                    BankAccount.account_id.is_not(None),
+                    BankAccount.start_date.is_not(None),
+                )
+            )
+        )
+        if not accounts:
+            return False
+        lease_until = now() + timedelta(hours=6)
+        connection.next_sync = lease_until
         # Durable six-hour lease before network I/O. A crashed job cannot immediately
         # refetch the bank, and no household/financial lock is held during HTTP calls.
         db.commit()
+        started = time.monotonic()
+        stage = "load_accounts"
+        client = EnableBanking(cfg)
         try:
             # Fetch and validate ALL pages/accounts before mutating any bank/ledger data.
-            client, batches = EnableBanking(cfg), []
-            accounts = list(
-                db.scalars(
-                    select(BankAccount).where(
-                        BankAccount.connection_id == connection.id,
-                        BankAccount.household_id == cfg.household_id,
-                        BankAccount.account_id.is_not(None),
-                        BankAccount.start_date.is_not(None),
-                    )
-                )
-            )
-            if not accounts:
-                return False
+            batches = []
             for account in accounts:
+                stage = "decrypt_account"
                 uid = cfg.open(account.uid_cipher)
+                stage = "fetch_transactions"
                 raw = client.transactions(uid, account.start_date)
+                stage = "parse_transactions"
                 parsed = [row for row in (movement(item, account.currency) for item in raw) if row and row["date"] >= account.start_date]
                 if any(row["date"] > date.today() + timedelta(days=1) for row in parsed):
                     raise BankError("INVALID_BANK_DATE")
+                stage = "fetch_balances"
                 balances = client.balances(uid)
+                stage = "parse_balances"
                 booked = [b for b in balances if b.get("balance_type") in ("ITBD", "CLBD")]
                 chosen = next((b for b in booked if b.get("balance_type") == "ITBD"), next(iter(booked), None))
                 balance = None
@@ -142,6 +155,7 @@ def sync_connection(cfg, connection_id):
                         raise BankError("CURRENCY_MISMATCH")
                     balance = minor_amount(chosen["balance_amount"]["amount"])
                 batches.append((account, parsed, balance))
+            stage = "authorize_write"
             db.scalar(select(Household).where(Household.id == cfg.household_id).with_for_update())
             db.refresh(connection, with_for_update=True)
             if connection.status != "active":
@@ -156,6 +170,7 @@ def sync_connection(cfg, connection_id):
                 return False
             with db.begin_nested():
                 for account, parsed, balance in batches:
+                    stage = "save_entries"
                     db.refresh(account)
                     if account.connection_id != connection.id:
                         raise BankError("CONNECTION_CHANGED")
@@ -202,19 +217,46 @@ def sync_connection(cfg, connection_id):
                             )
                         ):
                             db.add(BankDelivery(household_id=cfg.household_id, subscription_id=subscription.id, entry_id=entry.id))
+                    stage = "save_balances"
                     if balance is not None:
                         account.balance, account.balance_at = balance, now()
                     account.last_sync = now()
-                connection.last_sync, connection.error_code = now(), None
+                stage = "commit"
+                connection.last_sync, connection.error_code, connection.sync_diagnostic = now(), None, None
                 audit(db, member, "bank.synced", connection.id)
+            stage = "commit"
             db.commit()
             return True
         except Exception as exc:
             # Never persist/log provider bodies, account identifiers, credentials or exception strings.
-            connection.error_code = exc.code if isinstance(exc, BankError) else "SYNC_FAILED"
-            if connection.error_code in ("EXPIRED_SESSION", "SESSION_EXPIRED"):
-                connection.status = "expired"
-            db.commit()
+            http_status = getattr(exc, "http_status", None)
+            if http_status is None and stage in ("fetch_transactions", "parse_transactions", "fetch_balances", "parse_balances"):
+                http_status = client.last_http_status
+            diagnostic = failure_diagnostic(exc, stage, (time.monotonic() - started) * 1000, http_status)
+            logging.getLogger(__name__).warning(
+                "Bank synchronization failed: stage=%s type=%s code=%s http_status=%s",
+                diagnostic["stage"],
+                diagnostic["exception_type"],
+                diagnostic["code"],
+                diagnostic["http_status"],
+            )
+            # A failed flush/commit invalidates the SQLAlchemy transaction. Roll back
+            # all imported records before persisting safe metadata in a fresh transaction.
+            try:
+                db.rollback()
+                connection = db.scalar(
+                    select(BankConnection)
+                    .where(BankConnection.id == connection_id, BankConnection.household_id == cfg.household_id)
+                    .with_for_update()
+                )
+                if connection and connection.status == "active" and connection.next_sync == lease_until:
+                    connection.error_code, connection.sync_diagnostic = diagnostic["code"], diagnostic
+                    if connection.error_code in ("EXPIRED_SESSION", "SESSION_EXPIRED", "REVOKED_SESSION", "CLOSED_SESSION"):
+                        connection.status = "expired"
+                    db.commit()
+            except SQLAlchemyError:
+                db.rollback()
+                logging.getLogger(__name__).warning("Bank synchronization diagnostic could not be stored; database unavailable")
             return False
 
 

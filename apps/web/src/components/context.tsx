@@ -24,7 +24,7 @@ export function useCommand() {
   const { notify } = useApp();
   async function run<T>(
     operation: (key: string) => Promise<T>,
-    message = "Zapisano",
+    message: string | null = "Zapisano",
     after?: (result: T) => void,
   ) {
     if (inFlight.current) return;
@@ -36,7 +36,7 @@ export function useCommand() {
       const result = await operation(key.current);
       key.current = "";
       await query.invalidateQueries();
-      if (notify) notify(message);
+      if (notify && message) notify(message);
       after?.(result);
       return result;
     } catch (error) {

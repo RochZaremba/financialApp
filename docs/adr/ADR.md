@@ -1,5 +1,8 @@
 # Architecture Decision Records
 
+- [ADR-023: Safe bank synchronization failure diagnostics](ADR-023-bank-sync-diagnostics.md).
+- [ADR-022: Private bank synchronization and receipt reconciliation](ADR-022-private-bank-synchronization.md).
+
 - [ADR-021: Meter measurement time and context](ADR-021-meter-reading-time-context.md).
 
 - [ADR-020: Household access through MCP](ADR-020-mcp-household-access.md).

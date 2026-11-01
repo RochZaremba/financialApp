@@ -5020,6 +5020,37 @@ input.meter-file-input {
   gap: 12px;
   margin: 16px 0;
 }
+.bank-sync-failure > p {
+  color: var(--red);
+}
+.bank-diagnostic {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0 16px;
+}
+.bank-diagnostic summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+.bank-diagnostic dl {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 16px;
+}
+.bank-diagnostic dl > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+.bank-diagnostic dt {
+  color: var(--muted);
+}
+.bank-diagnostic dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .bank-connection {
   justify-content: space-between;
   border-top: 1px solid var(--border);

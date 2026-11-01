@@ -164,10 +164,85 @@ try {
       .click();
     await expect(card.getByText(/Konto aplikacji:/)).toBeVisible();
   }
+  async function failure(mode) {
+    assert.equal(
+      (
+        await context.request.post(`/api/__qa/sync-failure?mode=${mode}`)
+      ).status(),
+      200,
+    );
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Połączenie mBank" }),
+    ).toBeVisible();
+  }
+  await failure("unexpected");
   await page
-    .getByRole("button", { name: "Synchronizuj według limitu", exact: true })
+    .getByRole("button", { name: "Synchronizuj teraz", exact: true })
+    .click();
+  await expect(
+    page.locator(".bank-sync-failure").getByRole("alert"),
+  ).toContainText("Synchronizacja nie powiodła się.");
+  await expect(
+    page.getByRole("button", { name: "Synchronizuj teraz", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByText("Szczegóły błędu synchronizacji", { exact: true })
+    .click();
+  await expect(page.locator(".bank-diagnostic")).toContainText(
+    "Pobieranie operacji",
+  );
+  await expect(page.locator(".bank-diagnostic")).toContainText(
+    "AttributeError",
+  );
+  assert.ok(
+    !(await page.locator("body").innerText()).includes(
+      "PRIVATE_PROVIDER_RESPONSE_MUST_NOT_LEAK",
+    ),
+  );
+  const waiting = await context.request
+    .post(base + "/bank/sync")
+    .then((r) => r.json());
+  assert.equal(waiting.waiting, 1);
+  assert.equal(waiting.failed, 0);
+  assert.ok(waiting.message.includes("Nie rozpoczęto"));
+  await review("sync-unexpected-error");
+  await failure("http");
+  await page
+    .getByRole("button", { name: "Synchronizuj teraz", exact: true })
+    .click();
+  await expect(
+    page.locator(".bank-sync-failure").getByRole("alert"),
+  ).toContainText("Synchronizacja nie powiodła się.");
+  await page
+    .getByText("Szczegóły błędu synchronizacji", { exact: true })
+    .click();
+  await expect(page.locator(".bank-diagnostic")).toContainText("503");
+  await expect(page.locator(".bank-diagnostic")).toContainText("ASPSP_ERROR");
+  await review("sync-http-error");
+  await failure("legacy");
+  await page
+    .getByText("Szczegóły błędu synchronizacji", { exact: true })
+    .click();
+  await expect(page.locator(".bank-diagnostic")).toContainText(
+    "Ta starsza próba nie ma zapisanych szczegółów.",
+  );
+  await expect(
+    page.getByRole("button", { name: "Synchronizuj teraz", exact: true }),
+  ).toBeDisabled();
+  await review("sync-legacy-error");
+  await failure("none");
+  await page
+    .getByRole("button", { name: "Synchronizuj teraz", exact: true })
     .click();
   await expect(page.locator(".bank-entry")).toHaveCount(2);
+  await expect(page.locator(".bank-sync-failure")).toHaveCount(0);
+  await expect(page.locator(".bank-status").getByRole("status")).toContainText(
+    "Synchronizacja zakończona.",
+  );
+  await expect(
+    page.getByRole("button", { name: "Synchronizuj teraz", exact: true }),
+  ).toBeDisabled();
   await review("unreviewed");
   const initial = await context.request
     .get(base + "/bank")
