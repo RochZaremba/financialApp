@@ -11,21 +11,23 @@ from fastapi import Depends, HTTPException  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 from app import bank_sync  # noqa: E402
-from app.bank_provider import EnableBanking, config_path, load_config  # noqa: E402
+from app.bank_provider import BankError, EnableBanking, config_path, load_config  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import SessionLocal, engine  # noqa: E402
 from app.domain import today  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import BankConnection, BankDelivery, User  # noqa: E402
-from app.security import current_user  # noqa: E402
+from app.security import _attempts, current_user  # noqa: E402
 
 if settings.app_env != "development" or not engine.url.database.endswith("_test"):
     raise SystemExit("Bank QA refuses non-disposable environments")
 
 phase = 0
+failure_mode = "none"
 
 
 def call(self, method, path, data=None, params=None):
+    self.last_http_status = 200
     if path == "/application":
         return {"active": True, "environment": "PRODUCTION", "services": ["AIS"]}
     if path == "/aspsps":
@@ -52,6 +54,11 @@ def call(self, method, path, data=None, params=None):
     if path.endswith("/balances"):
         return {"balances": [{"balance_type": "ITBD", "balance_amount": {"currency": "PLN", "amount": "1000.00"}}]}
     if path.endswith("/transactions"):
+        if failure_mode == "http":
+            self.last_http_status = 503
+            raise BankError("ASPSP_ERROR", http_status=503)
+        if failure_mode == "unexpected":
+            raise AttributeError("PRIVATE_PROVIDER_RESPONSE_MUST_NOT_LEAK")
         rows = []
 
         def row(ref, amount, direction="DBIT", counterpart=""):
@@ -93,13 +100,40 @@ def promote(user=Depends(current_user)):
 
 @app.post("/__qa/reset")
 def reset():
-    global phase
+    global phase, failure_mode
     phase = 0
+    failure_mode = "none"
     path = config_path()
     if path.parent.name != ".bank" or "artifacts" not in str(path):
         raise HTTPException(400, "QA path guard")
     for name in ("config.json", "provider.pem", "encryption.key", "push.pem"):
         (path.parent / name).unlink(missing_ok=True)
+    return {"ok": True}
+
+
+@app.post("/__qa/sync-failure")
+def sync_failure(mode: str, user=Depends(current_user)):
+    global failure_mode
+    if mode not in ("none", "unexpected", "http", "legacy"):
+        raise HTTPException(422)
+    cfg = load_config()
+    if not cfg or user.id != cfg.owner_id:
+        raise HTTPException(403)
+    failure_mode = mode
+    # Each injected failure is a separate synthetic attempt, not a rapid user retry.
+    _attempts.pop("bank-refresh:" + user.id, None)
+    with SessionLocal() as db:
+        for row in db.scalars(
+            select(BankConnection).where(
+                BankConnection.household_id == cfg.household_id,
+                BankConnection.status == "active",
+            )
+        ):
+            row.next_sync = None
+            if mode == "legacy":
+                row.error_code, row.sync_diagnostic = "SYNC_FAILED", None
+                row.next_sync = datetime.now(timezone.utc) + timedelta(hours=6)
+        db.commit()
     return {"ok": True}
 
 

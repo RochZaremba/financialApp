@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 
 from app import bank_sync
 from app.bank_provider import BankConfig, BankError, EnableBanking, minor_amount
@@ -429,6 +429,215 @@ def test_sync_error_never_contains_provider_body_or_credentials(configured, monk
     with pytest.raises(BankError) as caught:
         EnableBanking(configured).call("GET", "/application")
     assert caught.value.code == "HTTP_503" and marker not in str(caught.value)
+
+
+def test_unexpected_parse_failure_has_safe_durable_diagnostics_and_keeps_lease(client, household, configured, monkeypatch, caplog):
+    connection, account = make_account(household, configured, initial=True)
+    marker = "PRIVATE_TRANSACTION_IBAN_TOKEN"
+
+    def request(self, *args, **kwargs):
+        self.last_http_status = 200
+        return {"transactions": [{**raw(creditor_account={"iban": None}), "remittance_information": [marker]}]}
+
+    monkeypatch.setattr(EnableBanking, "call", request)
+    response = client.post(household["path"] + "/bank/sync")
+    assert response.status_code == 200 and response.json()["failed"] == 1
+    assert response.json()["synchronized"] == response.json()["waiting"] == 0
+    assert "nie powiodła" in response.json()["message"]
+    with SessionLocal() as db:
+        row = db.get(BankConnection, connection)
+        diagnostic = row.sync_diagnostic
+        assert row.error_code == "SYNC_FAILED" and row.last_sync is None
+        assert diagnostic["stage"] == "parse_transactions" and diagnostic["exception_type"] == "AttributeError"
+        assert diagnostic["http_status"] == 200 and diagnostic["duration_ms"] >= 0
+        assert datetime.fromisoformat(diagnostic["occurred_at"]).tzinfo is not None
+        lease = row.next_sync
+        assert lease > datetime.now(timezone.utc) + timedelta(hours=5)
+        assert not db.scalar(select(BankEntry)) and not db.scalar(select(Transaction))
+        assert db.get(BankAccount, account).last_sync is None
+    state = client.get(household["path"] + "/bank").json()
+    assert state["connections"][0]["sync_diagnostic"] == diagnostic
+    assert state["connections"][0]["sync_available"] is False
+    assert marker not in json.dumps(state) + caplog.text
+    assert "stage=parse_transactions type=AttributeError code=SYNC_FAILED http_status=200" in caplog.text
+    monkeypatch.setattr(EnableBanking, "transactions", lambda *args: pytest.fail("Retry must not bypass the lease"))
+    waiting = client.post(household["path"] + "/bank/sync").json()
+    assert waiting["waiting"] == 1 and waiting["failed"] == waiting["synchronized"] == 0
+    assert "Nie rozpoczęto" in waiting["message"]
+    with SessionLocal() as db:
+        assert db.get(BankConnection, connection).next_sync == lease
+        assert db.get(BankConnection, connection).sync_diagnostic == diagnostic
+
+
+@pytest.mark.parametrize(
+    "status,body,expected",
+    [
+        (503, {"error": "ASPSP_TIMEOUT"}, "ASPSP_TIMEOUT"),
+        (429, {"error": "PRIVATE_SECRET_TOKEN"}, "HTTP_429"),
+        (500, ["PRIVATE_SECRET_TOKEN"], "HTTP_500"),
+        (200, ["PRIVATE_SECRET_TOKEN"], "INVALID_BANK_RESPONSE"),
+        (200, {"transactions": None}, "INVALID_BANK_RESPONSE"),
+        (200, {"transactions": [None]}, "INVALID_BANK_RESPONSE"),
+        (200, {"transactions": [], "continuation_key": {"secret": "PRIVATE_SECRET_TOKEN"}}, "INVALID_BANK_RESPONSE"),
+    ],
+)
+def test_provider_failures_store_http_status_without_response_content(
+    client, household, configured, monkeypatch, caplog, status, body, expected
+):
+    connection, _ = make_account(household, configured, initial=True)
+    monkeypatch.setattr(httpx, "request", lambda *args, **kwargs: httpx.Response(status, json=body))
+    assert not bank_sync.sync_connection(configured, connection)
+    with SessionLocal() as db:
+        row = db.get(BankConnection, connection)
+        assert row.error_code == expected
+        assert row.sync_diagnostic["stage"] == "fetch_transactions"
+        assert row.sync_diagnostic["http_status"] == status
+        assert "PRIVATE_SECRET_TOKEN" not in json.dumps(row.sync_diagnostic) + caplog.text
+        assert not db.scalar(select(BankEntry))
+
+
+@pytest.mark.parametrize("kind,expected", [(httpx.ReadTimeout, "BANK_TIMEOUT"), (httpx.ConnectError, "BANK_UNAVAILABLE")])
+def test_transport_failure_has_safe_type_without_private_url(client, household, configured, monkeypatch, caplog, kind, expected):
+    connection, _ = make_account(household, configured, initial=True)
+
+    def request(*args, **kwargs):
+        raise kind("PRIVATE_URL_AND_SESSION_TOKEN")
+
+    monkeypatch.setattr(httpx, "request", request)
+    assert not bank_sync.sync_connection(configured, connection)
+    state = client.get(household["path"] + "/bank").json()["connections"][0]
+    assert state["error_code"] == expected and state["sync_diagnostic"]["http_status"] is None
+    assert state["sync_diagnostic"]["exception_type"] in ("TimeoutException", "RequestError")
+    assert "PRIVATE_URL_AND_SESSION_TOKEN" not in json.dumps(state) + caplog.text
+
+
+def test_invalid_json_and_balances_are_diagnosed(configured, monkeypatch):
+    monkeypatch.setattr(httpx, "request", lambda *args, **kwargs: httpx.Response(200, text="PRIVATE_NOT_JSON"))
+    with pytest.raises(BankError) as error:
+        EnableBanking(configured).call("GET", "/application")
+    assert error.value.exception_type == "JSONDecodeError" and error.value.http_status == 200
+    assert "PRIVATE_NOT_JSON" not in str(error.value)
+    client = EnableBanking(configured)
+    monkeypatch.setattr(client, "call", lambda *args: {"balances": [None]})
+    with pytest.raises(BankError, match="INVALID_BANK_RESPONSE"):
+        client.balances("private-account")
+
+
+@pytest.mark.parametrize(
+    "balances,stage,kind", [(None, "fetch_balances", "TypeError"), ([{"balance_type": "ITBD"}], "parse_balances", "KeyError")]
+)
+def test_balance_failure_preserves_entire_batch_and_reports_stage(client, household, configured, monkeypatch, balances, stage, kind):
+    connection, _ = make_account(household, configured, initial=True)
+
+    def request(self, method, path, *args, **kwargs):
+        self.last_http_status = 200
+        return {"transactions": [raw()]} if path.endswith("/transactions") else {"balances": balances}
+
+    monkeypatch.setattr(EnableBanking, "call", request)
+    assert not bank_sync.sync_connection(configured, connection)
+    with SessionLocal() as db:
+        diagnostic = db.get(BankConnection, connection).sync_diagnostic
+        assert diagnostic["stage"] == stage and diagnostic["exception_type"] == kind and diagnostic["http_status"] == 200
+        assert not db.scalar(select(BankEntry))
+
+
+def test_bad_encrypted_identifier_is_diagnosed_without_leaking_it(client, household, configured, monkeypatch, caplog):
+    connection, account = make_account(household, configured, initial=True)
+    with SessionLocal() as db:
+        db.get(BankAccount, account).uid_cipher = "PRIVATE_INVALID_CIPHERTEXT"
+        db.commit()
+    monkeypatch.setattr(EnableBanking, "transactions", lambda *args: pytest.fail("Decryption failure must not contact the provider"))
+    assert not bank_sync.sync_connection(configured, connection)
+    with SessionLocal() as db:
+        diagnostic = db.get(BankConnection, connection).sync_diagnostic
+        assert diagnostic["stage"] == "decrypt_account" and diagnostic["exception_type"] == "InvalidToken"
+        assert diagnostic["http_status"] is None
+        assert "PRIVATE_INVALID_CIPHERTEXT" not in json.dumps(diagnostic) + caplog.text
+
+
+def test_database_failure_rolls_back_whole_batch_and_persists_diagnostic(client, household, configured, monkeypatch, caplog):
+    connection, account = make_account(household, configured, initial=True)
+    fake_feed(monkeypatch, [raw()])
+
+    def audit_failure(db, *args):
+        db.execute(text("SELECT CAST('PRIVATE_DATABASE_VALUE' AS integer)"))
+
+    monkeypatch.setattr(bank_sync, "audit", audit_failure)
+    assert not bank_sync.sync_connection(configured, connection)
+    with SessionLocal() as db:
+        row = db.get(BankConnection, connection)
+        assert row.sync_diagnostic["stage"] == "commit" and row.sync_diagnostic["exception_type"] == "DatabaseError"
+        assert row.sync_diagnostic["http_status"] is None and row.last_sync is None
+        assert row.next_sync > datetime.now(timezone.utc)
+        assert not db.scalar(select(BankEntry)) and not db.scalar(select(Transaction))
+        assert db.get(BankAccount, account).last_sync is None and db.get(BankAccount, account).balance is None
+        assert "PRIVATE_DATABASE_VALUE" not in caplog.text + json.dumps(row.sync_diagnostic)
+
+
+def test_success_clears_diagnostics_and_unmapped_accounts_do_not_take_lease(client, household, configured, monkeypatch):
+    connection, account = make_account(household, configured, initial=True)
+    with SessionLocal() as db:
+        row = db.get(BankAccount, account)
+        mapped = row.account_id
+        row.account_id = None
+        db.commit()
+    monkeypatch.setattr(EnableBanking, "transactions", lambda *args: pytest.fail("Unmapped account must not fetch"))
+    result = client.post(household["path"] + "/bank/sync").json()
+    assert result["unmapped"] == 1 and "przypisz" in result["message"]
+    with SessionLocal() as db:
+        assert db.get(BankConnection, connection).next_sync is None
+        db.get(BankAccount, account).account_id = mapped
+        db.get(BankConnection, connection).error_code = "SYNC_FAILED"
+        db.get(BankConnection, connection).sync_diagnostic = {"legacy": True}
+        db.commit()
+    fake_feed(monkeypatch, [raw()])
+    result = client.post(household["path"] + "/bank/sync").json()
+    assert result["synchronized"] == 1 and result["failed"] == 0
+    with SessionLocal() as db:
+        row = db.get(BankConnection, connection)
+        assert row.last_sync is not None and row.error_code is None and row.sync_diagnostic is None
+        assert db.scalar(select(func.count()).select_from(BankEntry)) == 1
+
+
+def test_diagnostic_allowlist_rejects_custom_exception_names_and_extra_fields():
+    from app.bank_diagnostics import failure_diagnostic, public_diagnostic
+
+    error = type("PRIVATE_CUSTOM_EXCEPTION_NAME", (Exception,), {})("PRIVATE_EXCEPTION_MESSAGE")
+    diagnostic = failure_diagnostic(error, "fetch_transactions", 1, 200)
+    assert diagnostic["exception_type"] == "UnexpectedError"
+    assert "PRIVATE" not in json.dumps(diagnostic)
+    assert public_diagnostic({**diagnostic, "payload": "PRIVATE_PAYLOAD"}) == diagnostic
+    assert public_diagnostic({**diagnostic, "exception_type": "PRIVATE_CUSTOM_EXCEPTION_NAME"}) is None
+    assert public_diagnostic({**diagnostic, "code": "PRIVATE_PROVIDER_CODE"})["code"] == "SYNC_FAILED"
+
+
+def test_diagnostic_migration_preserves_connection_and_refuses_history_loss(client, household, configured):
+    import os
+    import subprocess
+    import sys
+    from app.db import engine
+
+    connection, _ = make_account(household, configured, initial=True)
+    env = {**os.environ, "DATABASE_URL": engine.url.render_as_string(hide_password=False)}
+
+    def migrate(*args):
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", *args], cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True
+        )
+
+    assert migrate("downgrade", "015").returncode == 0
+    try:
+        assert migrate("upgrade", "head").returncode == 0
+        with SessionLocal() as db:
+            row = db.get(BankConnection, connection)
+            assert configured.open(row.session_cipher) == "private-session" and row.sync_diagnostic is None
+            row.sync_diagnostic = {"stage": "fetch_transactions"}
+            db.commit()
+        assert migrate("downgrade", "015").returncode != 0
+        with SessionLocal() as db:
+            assert db.get(BankConnection, connection).sync_diagnostic == {"stage": "fetch_transactions"}
+    finally:
+        assert migrate("upgrade", "head").returncode == 0
 
 
 def test_sync_lease_reentry_and_membership_change_during_unlocked_http(client, household, configured, monkeypatch):

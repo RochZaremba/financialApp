@@ -15,6 +15,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from .bank_provider import BankConfig, BankError, EnableBanking, config_path, decode_push_key, load_config, push_url_allowed
+from .bank_diagnostics import public_diagnostic, safe_code
 from .config import settings
 from .bank_sync import matches, matches_account, sync_connection
 from .db import get_db
@@ -81,6 +82,8 @@ def bank_status(household_id: str, member: Membership, db: Db):
     )
     balances = {row["id"]: row["balance"] for row in account_data(db, household_id)}
     accounts = list(db.scalars(select(BankAccount).where(BankAccount.household_id == household_id)))
+    mapped_connections = {a.connection_id for a in accounts if a.account_id and a.start_date}
+    current_time = datetime.now(timezone.utc)
     entries = list(
         db.scalars(
             select(BankEntry)
@@ -96,7 +99,21 @@ def bank_status(household_id: str, member: Membership, db: Db):
         owner=member.user_id == cfg.owner_id and member.role == "owner",
         vapid_public_key=cfg.vapid_public_key,
         connections=[
-            dict(id=c.id, status=c.status, valid_until=c.valid_until, last_sync=c.last_sync, next_sync=c.next_sync, error_code=c.error_code)
+            dict(
+                id=c.id,
+                status=c.status,
+                valid_until=c.valid_until,
+                last_sync=c.last_sync,
+                next_sync=c.next_sync,
+                error_code=safe_code(c.error_code) if c.error_code else None,
+                sync_diagnostic=public_diagnostic(c.sync_diagnostic),
+                sync_available=(
+                    c.status == "active"
+                    and c.id in mapped_connections
+                    and (not c.next_sync or c.next_sync <= current_time)
+                    and (not c.valid_until or c.valid_until > current_time)
+                ),
+            )
             for c in connections
         ],
         accounts=[
@@ -367,11 +384,55 @@ def bank_map(household_id: str, bank_account_id: str, data: MappingInput, member
 def bank_refresh(household_id: str, member: Membership, db: Db):
     cfg = guard(member, household_id, owner=True)
     rate_limit("bank-refresh:" + member.user_id, 3, 60)
-    ids = list(db.scalars(select(BankConnection.id).where(BankConnection.household_id == household_id, BankConnection.status == "active")))
-    synced = sum(bool(sync_connection(cfg, identifier)) for identifier in ids)
+    connections = list(
+        db.scalars(select(BankConnection).where(BankConnection.household_id == household_id, BankConnection.status == "active"))
+    )
+    synced, failed, waiting, unmapped = 0, 0, 0, 0
+    next_sync = []
+    for connection in connections:
+        has_account = db.scalar(
+            select(BankAccount.id)
+            .where(
+                BankAccount.household_id == household_id,
+                BankAccount.connection_id == connection.id,
+                BankAccount.account_id.is_not(None),
+                BankAccount.start_date.is_not(None),
+            )
+            .limit(1)
+        )
+        if not has_account:
+            unmapped += 1
+            continue
+        if connection.next_sync and connection.next_sync > datetime.now(timezone.utc):
+            waiting += 1
+        elif sync_connection(cfg, connection.id):
+            synced += 1
+        else:
+            db.refresh(connection)
+            if connection.error_code:
+                failed += 1
+            else:
+                waiting += 1
+        db.refresh(connection)
+        if connection.next_sync:
+            next_sync.append(connection.next_sync)
+    if failed:
+        message = "Próba synchronizacji nie powiodła się. Sprawdź szczegóły błędu i termin kolejnej próby. Poprzednie dane zachowano."
+    elif synced:
+        message = "Synchronizacja zakończona."
+    elif waiting:
+        message = "Nie rozpoczęto nowego pobierania. Kolejna próba będzie możliwa w podanym terminie — próby dzieli co najmniej 6 godzin."
+    elif unmapped:
+        message = "Najpierw przypisz rachunek do konta aplikacji i wybierz datę początku pobierania."
+    else:
+        message = "Brak aktywnej zgody bankowej. Połącz bank lub odnów zgodę."
     return {
         "synchronized": synced,
-        "message": "Synchronizacja zakończona." if synced else "Następna próba według limitu banku. Sprawdź termin i status połączenia.",
+        "failed": failed,
+        "waiting": waiting,
+        "unmapped": unmapped,
+        "next_sync": min(next_sync) if next_sync else None,
+        "message": message,
     }
 
 
