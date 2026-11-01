@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     classification_auto_threshold: float = Field(default=0.9, ge=0, le=1)
     classification_review_threshold: float = Field(default=0.6, ge=0, le=1)
     demo_password: str = ""
+    bank_config_path: str = ""
 
     @property
     def receipt_ai_available(self) -> bool:

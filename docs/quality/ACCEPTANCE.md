@@ -106,3 +106,13 @@ Shopping/navigation acceptance: verified locally after two consecutive clean 9/9
 - Exact daily averages use elapsed UTC seconds when both clocks are known, including 23/25-hour DST days; legacy date-only averages are labelled.
 - Invalid/future/ambiguous/nonexistent clocks fail clearly; existing daily uniqueness, monotonicity, revisions and idempotency stay enforced.
 - Additive migration preserves old readings/timestamps, permits previous clients and prevents destructive context downgrade.
+
+# Private bank synchronization
+
+- Opt-in official AIS for personal mBank; exactly one configured household and two explicitly approved current members; admin/owner password reauthentication and sharing confirmation for immutable first activation. No customer IDs/keys in source/images/logs.
+- Persistent encrypted provider sessions/account UIDs/subscriptions; private file secret store and protected backups; no payment initiation or bank-management MCP tools.
+- Production background worker, six-hour durable lease, visible success/error/expiry, owner disconnect/revoke, stable account identity across reconnect, PLN mapping plus explicit history start.
+- Exact booked amounts only; full-page atomicity, retry deduplication, uncertain records held for review, known own transfers not booked twice, credits require classification, balances compared without silent correction.
+- Receipt-before-bank and bank-before-receipt yield one Transaction; explicit matching, no automatic equal-amount guess, stale/duplicate/category integrity guards.
+- Per-device Android/iOS PWA push opt-in, generic lock-screen text, durable retry/outbox, expired subscription cleanup, no history notification flood; task persists without push.
+- Safe export/deletion, additive migration/old-image compatibility, API/static/browser checks and two clean four-viewport axe/overflow loops. Actual consent/statement and physical phone delivery require post-deployment user authentication and verification.

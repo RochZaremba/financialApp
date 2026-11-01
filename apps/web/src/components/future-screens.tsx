@@ -45,6 +45,7 @@ import {
 } from "./ui";
 import { ReminderPanel } from "./reminder-panel";
 import { ConnectionsPanel } from "./connections-panel";
+import { BankShortcut } from "./bank-screen";
 import { PageHeading } from "./budget-screens";
 
 export function GoalsScreen() {
@@ -546,6 +547,7 @@ export function AccountsScreen() {
           </form>
         </Card>
       )}
+      <BankShortcut />
       <div className="accounts-grid">
         {data.accounts.map((a) => (
           <Card className="account-card" key={a.id}>
@@ -582,8 +584,9 @@ export function AccountsScreen() {
       <div className="quiet-tip">
         <Landmark size={18} />
         <p>
-          Konta prowadzicie samodzielnie. Salda nie są pobierane z banku. Konto
-          osobiste po wypłacie kieszonkowego nie należy do wspólnego budżetu.
+          Te salda wynikają z zapisanych transakcji. Po połączeniu banku porównacie
+          je z saldem bankowym w ekranie Bank. Konto osobiste po wypłacie
+          kieszonkowego nie należy do wspólnego budżetu.
         </p>
       </div>
     </>

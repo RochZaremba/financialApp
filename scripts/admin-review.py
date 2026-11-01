@@ -1,4 +1,4 @@
-"""Run administrator recovery checks against an isolated disposable database."""
+"""Run feature browser checks against an isolated disposable database."""
 
 import os
 import secrets
@@ -34,6 +34,7 @@ def main():
         RECEIPT_PROVIDER="fixture",
         BUDGET_AI_PROVIDER="history",
         RECEIPT_STORAGE=str(storage),
+        BANK_CONFIG_PATH="",
         DEMO_PASSWORD=secrets.token_urlsafe(24),
         ADMIN_REVIEW_EMAIL="administrator@example.com",
         ADMIN_REVIEW_PASSWORD=secrets.token_urlsafe(24),
@@ -61,7 +62,13 @@ def main():
         subprocess.run([python, "-c", provision], cwd=ROOT / "apps/api", env=environment, check=True)
         with (artifacts / "admin-review-server.log").open("w") as output:
             services.append(
-                subprocess.Popen([python, "scripts/serve.py"], cwd=ROOT, env=environment, stdout=output, stderr=subprocess.STDOUT)
+                subprocess.Popen(
+                    [python, "scripts/serve.py", *(["--bank-review"] if "--bank" in sys.argv else [])],
+                    cwd=ROOT,
+                    env=environment,
+                    stdout=output,
+                    stderr=subprocess.STDOUT,
+                )
             )
         with httpx.Client(trust_env=False, timeout=2) as client:
             for _ in range(45):
@@ -86,7 +93,38 @@ def main():
                 review = "scripts/meter-context-review.mjs"
             if "--mcp" in sys.argv:
                 review = "scripts/mcp-review.mjs"
-            subprocess.run(["node", review, str(number)], cwd=ROOT, env=environment, check=True)
+            if "--bank" in sys.argv:
+                review = "scripts/bank-review.mjs"
+            command = ["node", review, str(number)]
+            if environment.get("PLAYWRIGHT_DOCKER") == "1":
+                version = subprocess.check_output(
+                    ["node", "-p", 'require("@playwright/test/package.json").version'], cwd=ROOT, text=True
+                ).strip()
+                command = [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--user",
+                    f"{os.getuid()}:{os.getgid()}",
+                    "--network",
+                    "host",
+                    "--ipc=host",
+                    "-v",
+                    f"{ROOT}:/work",
+                    "-w",
+                    "/work",
+                    "-e",
+                    "HOME=/tmp",
+                    "-e",
+                    "ADMIN_REVIEW_USER_PASSWORD",
+                    "-e",
+                    "ADMIN_REVIEW_PASSWORD",
+                    "-e",
+                    "ADMIN_REVIEW_EMAIL",
+                    f"mcr.microsoft.com/playwright:v{version}-noble",
+                    *command,
+                ]
+            subprocess.run(command, cwd=ROOT, env=environment, check=True)
         if "--regression" in sys.argv:
             arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
             subprocess.run(["npx", "playwright", "test", *arguments], cwd=ROOT / "apps/web", env=environment, check=True)

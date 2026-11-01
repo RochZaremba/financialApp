@@ -158,7 +158,7 @@ Zmiana odwołuje wszystkie sesje tej osoby. Hasła są porównywane dokładnie, 
 
 Deployment Docker: `docker compose -f compose.production.yaml exec api python -m app.reset_password osoba@example.com`.
 
-Domyślny eksport zawiera dane w JSON, bez sekretów/sesji i bez binarnych zdjęć. Zdjęcia są dostępne tylko członkom domu przez endpoint API; nie są publicznymi plikami. Konto osobiste po wypłacie kieszonkowego jest poza wspólnym budżetem. Integracje bankowe są przyszłym źródłem Transaction; nie są częścią MVP.
+Domyślny eksport zawiera dane w JSON, bez sekretów/sesji i bez binarnych zdjęć. Zdjęcia są dostępne tylko członkom domu przez endpoint API; nie są publicznymi plikami. Konto osobiste po wypłacie kieszonkowego jest poza wspólnym budżetem. Opcjonalny bank jest źródłem Transaction po prywatnej aktywacji; konfiguracja, ograniczenia i ochrona kopii kluczy: [BANK_INTEGRATION.md](BANK_INTEGRATION.md).
 # Autorzy wpisów i aktywność
 
 W gospodarstwie ekran `/aktywnosc` (Aktywność na komputerze, Więcej → Aktywność domowników na telefonie) pokazuje, kto zapisał paragony, wydatki i wpływy. Domyślny okres odpowiada miesiącowi wybranemu w nagłówku; „Cały okres” uwzględnia wszystkie zachowane wpisy. Liczy się czas dodania w Europe/Warsaw, a nie data zakupu. Wydatki i wpływy mają osobne liczby wpisów i sumy PLN. Paragon jest dokumentem (także szkicem), a jego kwota nie jest ponownie doliczana do wydatków.

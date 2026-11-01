@@ -94,7 +94,7 @@ Wydania zawierają obrazy API/web, identyfikator commita i sumy SHA-256. Klucze 
 
 ## Architektura
 
-Modularny monolit: **Next.js + TypeScript + React Query + Tailwind** na froncie; **FastAPI + Pydantic + SQLAlchemy + Alembic + PostgreSQL** na serwerze. Opaque sessions z Argon2, prywatny storage paragonów i wymienny dostawca AI. Europe/Warsaw, PLN. Integracja bankowa pozostaje przyszłym źródłem transakcji.
+Modularny monolit: **Next.js + TypeScript + React Query + Tailwind** na froncie; **FastAPI + Pydantic + SQLAlchemy + Alembic + PostgreSQL** na serwerze. Opaque sessions z Argon2, prywatny storage paragonów i wymienny dostawca AI. Europe/Warsaw, PLN. Opcjonalna prywatna integracja mBank (Enable Banking AIS) uzupełnia istniejący model transakcji; [aktywacja i ograniczenia](docs/BANK_INTEGRATION.md).
 
 ```text
 apps/web/       interfejs i PWA
@@ -114,7 +114,7 @@ docs/adr/       decyzje architektoniczne
 - [Współpraca](CONTRIBUTING.md) · [Bezpieczeństwo](SECURITY.md)
 - [Kryteria jakości](docs/quality/ACCEPTANCE.md) · [przebiegi review](docs/quality/LOOP_LOG.md)
 
-To aplikacja do domowego budżetu. V1 nie obejmuje PSD2, automatycznego importu bankowego ani księgowości podatkowej.
+To aplikacja do domowego budżetu. Księgowość podatkowa pozostaje poza zakresem. Prywatna integracja mBank wymaga aktywacji dla wybranego domu, zgody bankowej i osobnego włączenia powiadomień na każdym telefonie.
 
 Stałe płatności obsługują cykle tygodniowe, miesięczne, kwartalne i roczne oraz przypomnienia 0–30 dni przed terminem. Potwierdzenie zapisuje jeden wydatek dla wybranego terminu. W widoku Stałe wydatki można pobrać prywatny kalendarz z alarmami na najbliższy rok; po zmianie harmonogramu należy go ponownie zaimportować. Przypomnienia w aplikacji nie wymagają włączonych powiadomień systemowych.
 

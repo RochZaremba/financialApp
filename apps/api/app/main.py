@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import secrets
+from pathlib import Path
 from collections import defaultdict
 from datetime import date as DateValue, datetime, timedelta, timezone
 from typing import Annotated, Literal
@@ -17,6 +18,7 @@ from .admin import router as admin_router
 from .activity import router as activity_router
 from .meters import router as meters_router
 from .connections import router as connections_router
+from .bank import router as bank_router
 from .db import get_db
 from .domain import (
     account_data,
@@ -81,6 +83,11 @@ from .models import (
     Transaction,
     TransactionAllocation,
     User,
+    BankAccount,
+    BankConnection,
+    BankEntry,
+    BankSubscription,
+    BankDelivery,
 )
 from .schedules import occurrence_dates, calendar_text, reminders
 from .shopping import router as shopping_router
@@ -113,6 +120,7 @@ app.include_router(admin_router)
 app.include_router(activity_router)
 app.include_router(meters_router)
 app.include_router(connections_router)
+app.include_router(bank_router)
 Db = Annotated[Session, Depends(get_db)]
 Person = Annotated[User, Depends(current_user)]
 Membership = Annotated[Member, Depends(household_member)]
@@ -603,8 +611,18 @@ def transaction_edit(household_id: str, transaction_id: str, data: TransactionEd
     if data.kind != tx.kind:
         raise HTTPException(422, "Nie można zmienić rodzaju zapisanej transakcji.")
     movement = TransactionInput.model_validate(data.model_dump(exclude={"expected_updated_at"}))
+    if db.scalar(select(BankEntry.id).where(BankEntry.household_id == household_id, BankEntry.transaction_id == tx.id)):
+        if (
+            movement.amount != tx.amount
+            or movement.date != tx.date
+            or movement.account_id != tx.account_id
+            or movement.destination_id != tx.destination_id
+        ):
+            raise HTTPException(422, "Kwota, data i rachunki są uzgodnione z bankiem. Zmień tylko opis lub kategorie.")
     old_allocations = list(db.scalars(select(TransactionAllocation).where(TransactionAllocation.transaction_id == tx.id)))
-    if tx.source == "receipt":
+    if tx.source == "receipt" or (
+        tx.source == "bank" and db.scalar(select(Receipt.id).where(Receipt.transaction_id == tx.id, Receipt.household_id == household_id))
+    ):
         old_splits = sorted((a.category_id, a.amount) for a in old_allocations)
         new_splits = sorted((a.category_id, a.amount) for a in movement.allocations)
         if movement.amount != tx.amount or movement.date != tx.date or old_splits != new_splits:
@@ -1094,7 +1112,36 @@ def receipt_finalize(household_id: str, receipt_id: str, data: FinalizeInput, me
         account_id=data.account_id,
         allocations=[SplitInput(category_id=k, amount=v) for k, v in totals.items() if v > 0],
     )
-    tx = create_transaction(db, member, tx_data, f"receipt:{receipt.id}", source="receipt", source_id=receipt.id)
+    if data.target_transaction_id:
+        from .bank import guard
+
+        guard(member, household_id)
+        tx = scoped(db, Transaction, household_id, data.target_transaction_id, lock=True)
+        if not data.target_expected_updated_at or tx.updated_at != data.target_expected_updated_at:
+            raise HTTPException(409, "Transakcja bankowa została zmieniona. Wybierz aktualne dopasowanie ponownie.")
+        validate_transaction(db, member, tx_data)
+        ensure_open(db, household_id, tx.date.strftime("%Y-%m"))
+        if tx.kind != "expense" or tx.account_id != data.account_id or tx.amount != data.total or abs((tx.date - data.date).days) > 7:
+            raise HTTPException(422, "Paragon nie pasuje do kwoty, rachunku lub daty transakcji.")
+        bank_entry = db.scalar(
+            select(BankEntry).where(BankEntry.household_id == household_id, BankEntry.transaction_id == tx.id).with_for_update()
+        )
+        if not bank_entry or db.scalar(select(Receipt.id).where(Receipt.transaction_id == tx.id, Receipt.id != receipt.id)):
+            raise HTTPException(409, "Transakcja ma już paragon lub nie pochodzi z połączenia bankowego.")
+        db.execute(delete(TransactionAllocation).where(TransactionAllocation.transaction_id == tx.id))
+        for split in tx_data.allocations:
+            db.add(TransactionAllocation(**split.model_dump(), household_id=household_id, transaction_id=tx.id, created_by=member.user_id))
+        tx.status, tx.updated_by = "categorized", member.user_id
+        tx.updated_at = datetime.now(timezone.utc)
+        bank_entry.reviewed, bank_entry.updated_by = True, member.user_id
+        for task in db.scalars(select(ReviewTask).where(ReviewTask.household_id == household_id, ReviewTask.transaction_id == tx.id)):
+            task.resolved = True
+    else:
+        from .bank import receipt_candidates
+
+        if not data.acknowledge_bank_separate and receipt_candidates(db, household_id, data.total, data.account_id, data.date):
+            raise HTTPException(409, "Ta płatność może być już pobrana z banku. Wybierz dopasowanie lub potwierdź osobny zakup.")
+        tx = create_transaction(db, member, tx_data, f"receipt:{receipt.id}", source="receipt", source_id=receipt.id)
     receipt.transaction_id, receipt.status, receipt.error = tx.id, "confirmed", None
     for task in db.scalars(select(ReviewTask).where(ReviewTask.household_id == household_id, ReviewTask.receipt_id == receipt.id)):
         task.resolved = True
@@ -1212,6 +1259,26 @@ def export(household_id: str, member: Membership, db: Db):
     }
     for model in models:
         data[model.__tablename__] = [serialize(r) for r in records(db, model, household_id)]
+    from .bank_provider import load_config
+
+    cfg = load_config()
+    bank_export = bool(cfg and cfg.household_id == household_id and member.user_id in cfg.allowed_users)
+    data["bank_accounts"] = [
+        dict(id=a.id, account_id=a.account_id, last4=a.last4, currency=a.currency, balance=a.balance, balance_at=a.balance_at)
+        for a in (records(db, BankAccount, household_id) if bank_export else [])
+    ]
+    data["bank_entries"] = [
+        dict(
+            id=e.id,
+            account_id=e.bank_account_id,
+            date=e.date,
+            amount=e.amount,
+            description=e.description,
+            reviewed=e.reviewed,
+            transaction_id=e.transaction_id,
+        )
+        for e in (records(db, BankEntry, household_id) if bank_export else [])
+    ]
     return data
 
 
@@ -1222,10 +1289,24 @@ def household_delete(household_id: str, data: HouseholdInput, member: Membership
         raise HTTPException(403, "Tylko właściciel może usunąć gospodarstwo.")
     if data.name != household.name:
         raise HTTPException(422, "Wpisz dokładną nazwę gospodarstwa.")
+    if db.scalar(
+        select(BankConnection.id).where(
+            BankConnection.household_id == household_id,
+            or_(
+                BankConnection.session_cipher.is_not(None), BankConnection.status.in_(["active", "pending", "exchanging", "revoke_pending"])
+            ),
+        )
+    ):
+        raise HTTPException(409, "Przed usunięciem domu odłącz bank i poczekaj na potwierdzenie cofnięcia dostępu.")
     paths = [storage_path(r.path) for r in records(db, Receipt, household_id)]
     paths += [storage_path(r.path) for r in records(db, MeterPhoto, household_id)]
     # Delete in dependency order to preserve FK integrity.
     for model in [
+        BankDelivery,
+        BankSubscription,
+        BankEntry,
+        BankAccount,
+        BankConnection,
         MeterReading,
         MeterPhoto,
         Meter,
@@ -1257,6 +1338,13 @@ def household_delete(household_id: str, data: HouseholdInput, member: Membership
     db.commit()
     for path in paths:
         path.unlink(missing_ok=True)
+    from .bank_provider import config_path, load_config
+
+    cfg = load_config()
+    if cfg and cfg.household_id == household_id:
+        # Remove household-bound secrets only after provider revocation and DB deletion.
+        for path in [cfg.private_key_path, cfg.encryption_key_path, cfg.vapid_key_path, config_path()]:
+            Path(path).unlink(missing_ok=True)
     return {"ok": True}
 
 
@@ -1306,3 +1394,7 @@ def budget_proposal(household_id: str, month: str, data: ProposalRequest, member
 from .mcp_server import install_mcp  # noqa: E402
 
 install_mcp(app)
+
+from .bank_worker import install_worker  # noqa: E402
+
+install_worker(app)
