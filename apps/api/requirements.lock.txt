@@ -45,3 +45,17 @@ starlette==1.7.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 uvicorn==0.54.0
+cryptography==47.0.0
+pywebpush==2.5.0
+aiohttp==3.14.5
+aiohappyeyeballs==2.7.1
+aiosignal==1.4.0
+frozenlist==1.8.0
+multidict==7.2.1
+propcache==0.5.4
+yarl==1.25.1
+http_ece==1.2.1
+requests==2.34.2
+charset-normalizer==3.5.2
+urllib3==2.8.0
+py-vapid==1.9.6

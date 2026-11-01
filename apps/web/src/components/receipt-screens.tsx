@@ -27,6 +27,7 @@ import {
   Gauge,
 } from "lucide-react";
 import { api, ApiError, json } from "@/lib/api";
+import { BankShortcut, BankReceiptMatch } from "./bank-screen";
 import { money, moneyInput, parseMoney, parseSignedMoney } from "@/lib/money";
 import type { Receipt, ReceiptItem } from "@/lib/types";
 import { useApp, useCommand } from "./context";
@@ -249,10 +250,28 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
   const command = useCommand();
   const router = useRouter();
   const [merchant, setMerchant] = useState(receipt.merchant);
-  const [date, setDate] = useState(receipt.date || "");
-  const [total, setTotal] = useState(
+  const [bankAccount, setBankAccount] = useState(
+    data.accounts.find((a) => a.currency === "PLN")?.id || "",
+  );
+  const [bankTarget, setBankTarget] = useState<{
+    id: string;
+    updated_at: string;
+  } | null>(null);
+  const [bankSeparate, setBankSeparate] = useState(false);
+  const [date, setDateValue] = useState(receipt.date || "");
+  function setDate(value: string) {
+    setDateValue(value);
+    setBankTarget(null);
+    setBankSeparate(false);
+  }
+  const [total, setTotalValue] = useState(
     receipt.total ? moneyInput(receipt.total) : "",
   );
+  function setTotal(value: string) {
+    setTotalValue(value);
+    setBankTarget(null);
+    setBankSeparate(false);
+  }
   const [items, setItems] = useState<EditableItem[]>(() =>
     receipt.items.map((i, index) => ({
       name: i.name,
@@ -345,12 +364,19 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
               ...payload(),
               account_id: f.get("account"),
               acknowledge_duplicate: acknowledge,
+              target_transaction_id: bankTarget?.id || null,
+              target_expected_updated_at: bankTarget?.updated_at || null,
+              acknowledge_bank_separate: bankSeparate,
             }),
           );
         } catch (error) {
           // Corrected OCR can reveal a match that was unknown at upload.
           // Finalization's 409 requires an explicit separate-purchase decision.
-          if (error instanceof ApiError && error.status === 409)
+          if (
+            error instanceof ApiError &&
+            error.status === 409 &&
+            error.message.includes("paragon może")
+          )
             setDuplicateDetected(true);
           throw error;
         }
@@ -801,7 +827,17 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
         </Card>
         {!readOnly && (
           <Card className="receipt-confirm">
-            <Select label="Z którego konta zapłacono?" name="account" required>
+            <Select
+              label="Z którego konta zapłacono?"
+              name="account"
+              required
+              value={bankAccount}
+              onChange={(event) => {
+                setBankAccount(event.target.value);
+                setBankTarget(null);
+                setBankSeparate(false);
+              }}
+            >
               {data.accounts
                 .filter((a) => a.currency === "PLN")
                 .map((a) => (
@@ -810,6 +846,14 @@ function ReceiptEditor({ receipt }: { receipt: Receipt }) {
                   </option>
                 ))}
             </Select>
+            <BankReceiptMatch
+              amount={safe(total)}
+              accountId={bankAccount}
+              date={date}
+              selected={bankTarget?.id || (bankSeparate ? "new" : "")}
+              onSeparate={setBankSeparate}
+              onSelect={setBankTarget}
+            />
             <p className="muted small">
               Poprawione kategorie zapamiętamy tylko dla Waszego gospodarstwa.
             </p>
@@ -891,6 +935,7 @@ export function InboxScreen() {
         title="Chwila uwagi i gotowe."
         description="Sprawdź niepewne pozycje i dokończ zapis paragonów. Reszta ma swoje miejsce."
       />
+      <BankShortcut />
       <Card className="inbox-card">
         {data.tasks.length ? (
           <div className="inbox-list">

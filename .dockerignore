@@ -14,3 +14,6 @@ artifacts
 **/__pycache__
 **/.pytest_cache
 **/.ruff_cache
+**/*.pem
+**/*.pem.txt
+**/*.key

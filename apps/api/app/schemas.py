@@ -171,6 +171,9 @@ class ReceiptInput(Schema):
 class FinalizeInput(ReceiptInput):
     account_id: str
     acknowledge_duplicate: bool = False
+    target_transaction_id: str | None = Field(default=None, max_length=36)
+    target_expected_updated_at: datetime | None = None
+    acknowledge_bank_separate: bool = False
 
 
 class ExtractedItem(Schema):

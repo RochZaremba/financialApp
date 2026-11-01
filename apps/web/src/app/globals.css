@@ -4997,3 +4997,95 @@ input.meter-file-input {
 .meter-chart-detail .meter-context-text {
   flex-basis: 100%;
 }
+
+.bank-shortcut,
+.bank-status,
+.bank-account,
+.bank-push,
+.bank-inbox {
+  margin: 20px 0;
+}
+.bank-shortcut p,
+.bank-status p,
+.bank-account p,
+.bank-push p,
+.bank-inbox > p {
+  margin: 12px 0;
+}
+.bank-actions,
+.bank-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+.bank-connection {
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.bank-balances {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.bank-balances span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+.bank-balances strong {
+  display: block;
+  font-size: 24px;
+  margin-top: 8px;
+}
+.bank-account form,
+.bank-entry form {
+  display: grid;
+  gap: 16px;
+  margin: 18px 0;
+}
+.bank-entry {
+  padding: 24px 0;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.bank-entry h3 {
+  font-size: 16px;
+}
+.bank-entry .section-title {
+  flex-wrap: wrap;
+}
+.bank-entry > p {
+  margin: 12px 0;
+}
+.bank-entry details {
+  margin-top: 16px;
+}
+.bank-entry summary {
+  cursor: pointer;
+  min-height: 44px;
+  padding: 12px 0;
+  font-weight: 600;
+}
+.bank-receipt-match {
+  margin: 16px 0;
+}
+.bank-activation form {
+  margin-top: 20px;
+}
+.bank-activation fieldset {
+  display: grid;
+  gap: 18px;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.bank-activation p {
+  margin: 14px 0;
+}
+.bank-activation input[type="file"] {
+  max-width: 100%;
+}

@@ -63,6 +63,7 @@ import { ShoppingScreen } from "./shopping-screen";
 import { AdminScreen } from "./admin-screen";
 import { ActivityScreen } from "./activity-screen";
 import { MetersScreen } from "./meters-screen";
+import { BankScreen, BankCallback } from "./bank-screen";
 
 const nav = [
   { href: "/", label: "Pulpit", icon: House },
@@ -135,6 +136,11 @@ function Authenticated() {
   const path = usePathname();
   const router = useRouter();
   const params = useSearchParams();
+  const [bankCallback, setBankCallback] = useState(() => ({
+    code: params.get("code"),
+    state: params.get("state"),
+    error: params.get("error"),
+  }));
   const [selected, setSelected] = useState("");
   const [month, setMonth] = useState(() => warsawDate().slice(0, 7));
   const [toast, setToast] = useState("");
@@ -250,7 +256,18 @@ function Authenticated() {
       ? path
       : "/wiecej";
   const content =
-    path === "/" ? (
+    bankCallback.state && (bankCallback.code || bankCallback.error) ? (
+      <BankCallback
+        {...bankCallback}
+        onComplete={(id) => {
+          setSelected(id);
+          setBankCallback({ code: null, state: null, error: null });
+          router.replace("/bank");
+        }}
+      />
+    ) : path === "/bank" ? (
+      <BankScreen />
+    ) : path === "/" ? (
       <Home />
     ) : path === "/budzet" ? (
       <BudgetScreen />

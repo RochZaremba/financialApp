@@ -40,7 +40,9 @@ jobs:
           WEBKIT: '1'
           PLAYWRIGHT_DOCKER: '1'
           REVIEW_PASS: github-ci
-        run: ./scripts/check.sh
+        run: |
+          ./scripts/check.sh
+          .venv/bin/python scripts/admin-review.py --bank
       - name: Browser and test evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -52,4 +54,5 @@ jobs:
             artifacts/playwright-report/
             artifacts/e2e-results/
             artifacts/check-server.log
+            artifacts/admin-review-server.log
           if-no-files-found: ignore

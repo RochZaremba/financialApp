@@ -13,8 +13,9 @@ ROOT = Path(__file__).absolute().parents[1]
 
 def main():
     development = sys.argv[1:] == ["--dev"]
-    if sys.argv[1:] not in ([], ["--dev"]):
-        raise SystemExit("Użycie: serve.py [--dev]")
+    bank_review = sys.argv[1:] == ["--bank-review"]
+    if sys.argv[1:] not in ([], ["--dev"], ["--bank-review"]):
+        raise SystemExit("Użycie: serve.py [--dev | --bank-review]")
     for port in (3000, 8000):
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.3):
@@ -44,6 +45,8 @@ def main():
     ]
     if development:
         api.append("--reload")
+    if bank_review:
+        api = [str(ROOT / ".venv/bin/python"), str(ROOT / "scripts/bank-review-api.py")]
     commands = [
         (api, ROOT / "apps/api"),
         (

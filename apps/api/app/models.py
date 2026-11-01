@@ -360,6 +360,67 @@ class Audit(Scoped, Base):
     details: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class BankConnection(Scoped, Base):
+    __tablename__ = "bank_connections"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    state_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    state_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    session_cipher: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    next_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(60), nullable=True)
+
+
+class BankAccount(Scoped, Base):
+    __tablename__ = "bank_accounts"
+    connection_id: Mapped[str] = mapped_column(ForeignKey("bank_connections.id", ondelete="CASCADE"), index=True)
+    uid_cipher: Mapped[str] = mapped_column(String(2048))
+    identity_hash: Mapped[str] = mapped_column(String(64))
+    last4: Mapped[str] = mapped_column(String(4))
+    currency: Mapped[str] = mapped_column(String(3))
+    iban_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, unique=True)
+    start_date: Mapped[DateValue | None] = mapped_column(Date, nullable=True)
+    balance: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    balance_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (UniqueConstraint("household_id", "identity_hash"),)
+
+
+class BankEntry(Scoped, Base):
+    __tablename__ = "bank_entries"
+    bank_account_id: Mapped[str] = mapped_column(ForeignKey("bank_accounts.id", ondelete="CASCADE"), index=True)
+    reference_hash: Mapped[str] = mapped_column(String(64))
+    reliable: Mapped[bool] = mapped_column(Boolean)
+    counterparty_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    date: Mapped[DateValue] = mapped_column(Date)
+    description: Mapped[str] = mapped_column(String(160))
+    transaction_id: Mapped[str | None] = mapped_column(ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True)
+    reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
+    __table_args__ = (UniqueConstraint("bank_account_id", "reference_hash"), CheckConstraint("amount != 0"))
+
+
+class BankSubscription(Scoped, Base):
+    __tablename__ = "bank_subscriptions"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    endpoint_hash: Mapped[str] = mapped_column(String(64))
+    payload_cipher: Mapped[str] = mapped_column(String(8192))
+    __table_args__ = (UniqueConstraint("user_id", "endpoint_hash"),)
+
+
+class BankDelivery(Scoped, Base):
+    __tablename__ = "bank_deliveries"
+    subscription_id: Mapped[str] = mapped_column(ForeignKey("bank_subscriptions.id", ondelete="CASCADE"))
+    entry_id: Mapped[str] = mapped_column(ForeignKey("bank_entries.id", ondelete="CASCADE"))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (UniqueConstraint("subscription_id", "entry_id"),)
+
+
 class Mutation(Scoped, Base):
     __tablename__ = "mutations"
     key: Mapped[str] = mapped_column(String(100))
