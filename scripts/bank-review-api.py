@@ -68,10 +68,14 @@ def call(self, method, path, data=None, params=None):
                 booking_date=today().isoformat(),
                 transaction_amount={"amount": amount, "currency": "PLN"},
                 credit_debit_indicator=direction,
-                creditor={"name": "Sklep QA"},
-                debtor={"name": "Wpływ QA"},
+                creditor={"name": None},
+                debtor=None,
+                creditor_account={"iban": None},
+                debtor_account={"iban": None},
                 remittance_information=["Opis QA"],
             )
+            if direction == "CRDT":
+                result["remittance_information"] = None
             if counterpart:
                 result["creditor_account" if direction == "DBIT" else "debtor_account"] = {"iban": counterpart}
             return result

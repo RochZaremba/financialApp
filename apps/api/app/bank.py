@@ -14,7 +14,16 @@ from pydantic import Field, StringConstraints
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
-from .bank_provider import BankConfig, BankError, EnableBanking, config_path, decode_push_key, load_config, push_url_allowed
+from .bank_provider import (
+    BankConfig,
+    BankError,
+    EnableBanking,
+    config_path,
+    decode_push_key,
+    load_config,
+    normalized_iban,
+    push_url_allowed,
+)
 from .bank_diagnostics import public_diagnostic, safe_code
 from .config import settings
 from .bank_sync import matches, matches_account, sync_connection
@@ -309,7 +318,7 @@ def bank_complete(data: CompleteInput, user: Annotated[User, Depends(current_use
             account = db.scalar(
                 select(BankAccount).where(BankAccount.household_id == cfg.household_id, BankAccount.identity_hash == identity)
             )
-            iban = (item.get("account_id") or {}).get("iban", "").replace(" ", "").upper()
+            iban = normalized_iban(item.get("account_id"))
             if not account:
                 account = BankAccount(
                     household_id=cfg.household_id,
