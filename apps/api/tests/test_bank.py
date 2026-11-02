@@ -231,7 +231,8 @@ def test_partial_failure_preserves_cursor_and_bank_identity_conflicts(client, ho
         assert c.error_code == "BANK_ENTRY_CHANGED" and c.next_sync
 
 
-def test_authorization_state_nonce_and_reconnect_mapping(client, household, configured, monkeypatch):
+@pytest.mark.parametrize("iban", ["PL-TEST-1234", None])
+def test_authorization_state_nonce_and_reconnect_mapping(client, household, configured, monkeypatch, iban):
     states = []
     monkeypatch.setattr(
         EnableBanking, "banks", lambda self: [dict(name="mBank", country="PL", psu_types=["personal"], maximum_consent_validity=15552000)]
@@ -250,7 +251,7 @@ def test_authorization_state_nonce_and_reconnect_mapping(client, household, conf
             aspsp={"name": "mBank", "country": "PL"},
             psu_type="personal",
             access={"valid_until": (datetime.now(timezone.utc) + timedelta(days=10)).isoformat()},
-            accounts=[dict(uid="bank-uid", identification_hash="stable-hash", currency="PLN", account_id={"iban": "PL-TEST-1234"})],
+            accounts=[dict(uid="bank-uid", identification_hash="stable-hash", currency="PLN", account_id={"iban": iban})],
         ),
     )
     assert client.post(household["path"] + "/bank/connect").status_code == 200
@@ -261,6 +262,8 @@ def test_authorization_state_nonce_and_reconnect_mapping(client, household, conf
         a = db.scalar(select(BankAccount))
         identifier = a.id
         assert "bank-uid" not in a.uid_cipher and "one-session" not in db.scalar(select(BankConnection)).session_cipher
+        assert a.last4 == ("1234" if iban else "")
+        assert bool(a.iban_hash) == bool(iban)
     assert client.post(household["path"] + "/bank/connect").status_code == 200
     assert client.post("/bank/complete", json={"code": "new-code", "state": states[-1]}).status_code == 200
     with SessionLocal() as db:
@@ -272,6 +275,92 @@ def test_authorization_state_nonce_and_reconnect_mapping(client, household, conf
 def test_exact_amount_validation(value):
     with pytest.raises(BankError):
         minor_amount(value)
+
+
+@pytest.mark.parametrize("direction", ["DBIT", "CRDT"])
+@pytest.mark.parametrize("shape", ["missing", "null", "empty", "null_values"])
+def test_optional_transaction_fields_do_not_invent_data(direction, shape):
+    side = "creditor" if direction == "DBIT" else "debtor"
+    row = raw(direction=direction)
+    for key in (side, side + "_account", "remittance_information"):
+        row.pop(key, None)
+    if shape == "null":
+        row.update({side: None, side + "_account": None, "remittance_information": None})
+    elif shape == "empty":
+        row.update({side: {}, side + "_account": {}, "remittance_information": []})
+    elif shape == "null_values":
+        row.update({side: {"name": None}, side + "_account": {"iban": None}, "remittance_information": None})
+    movement = bank_provider.movement(row, "PLN")
+    assert movement["amount"] == (-1234 if direction == "DBIT" else 1234)
+    assert movement["date"] == today()
+    assert movement["reference"] == "ref-1"
+    assert movement["description"] == "Operacja bankowa" and movement["counterparty_hash"] is None
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"creditor": "not-an-object"},
+        {"creditor": []},
+        {"creditor": {"name": 123}},
+        {"creditor_account": "not-an-object"},
+        {"creditor_account": []},
+        {"creditor_account": {"iban": 123}},
+        {"creditor_account": {"iban": False}},
+        {"remittance_information": {}},
+        {"remittance_information": [None]},
+        {"transaction_amount": None},
+        {"booking_date": None},
+        {"credit_debit_indicator": None},
+        {"transaction_amount": {"currency": "PLN", "amount": "1.234"}},
+    ],
+)
+def test_non_null_invalid_fields_still_fail_validation(change):
+    with pytest.raises(BankError) as error:
+        bank_provider.movement({**raw(), **change}, "PLN")
+    assert error.value.code in ("INVALID_BANK_MOVEMENT", "INVALID_BANK_AMOUNT")
+
+
+def test_optional_text_and_real_counterparty_identifier_are_preserved():
+    movement = bank_provider.movement({**raw(creditor_account={"iban": "pl 00 1234"}), "remittance_information": "Koszyk"}, "PLN")
+    assert movement["description"] == "Sklep QA · Koszyk"
+    assert movement["counterparty_hash"] == bank_provider.digest("PL001234")
+
+
+def test_realistic_nullable_batch_imports_once_without_duplicate_or_opening_balance_rewrite(client, household, configured, monkeypatch):
+    connection, account = make_account(household, configured, initial=True)
+    rows = [
+        {**raw("debit", creditor_account={"iban": None}), "creditor": {"name": None}},
+        {**raw("credit", direction="CRDT", debtor_account={"iban": None}), "debtor": None, "remittance_information": None},
+    ]
+    fake_feed(monkeypatch, rows)
+    account_id = household["data"]["accounts"][0]["id"]
+    initial_balance = household["data"]["accounts"][0]["balance"]
+    assert bank_sync.sync_connection(configured, connection)
+    assert not bank_sync.sync_connection(configured, connection)
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(BankEntry)) == 2
+        assert not db.scalar(select(Transaction))
+        assert db.get(BankConnection, connection).error_code is None
+        assert db.get(BankConnection, connection).last_sync is not None
+        assert db.get(BankAccount, account).balance == 10000
+        db.get(BankConnection, connection).next_sync = None
+        db.commit()
+    accounts = client.get(household["path"] + "/overview?month=2026-10").json()["accounts"]
+    assert next(account["balance"] for account in accounts if account["id"] == account_id) == initial_balance
+    assert bank_sync.sync_connection(configured, connection)
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(BankEntry)) == 2 and not db.scalar(select(Transaction))
+
+
+def test_malformed_optional_field_prevents_partial_batch_import(client, household, configured, monkeypatch):
+    connection, _ = make_account(household, configured, initial=True)
+    fake_feed(monkeypatch, [raw("valid", creditor_account={"iban": None}), raw("invalid", creditor_account={"iban": 123})])
+    assert not bank_sync.sync_connection(configured, connection)
+    with SessionLocal() as db:
+        row = db.get(BankConnection, connection)
+        assert row.error_code == "INVALID_BANK_MOVEMENT" and row.sync_diagnostic["stage"] == "parse_transactions"
+        assert not db.scalar(select(BankEntry)) and not db.scalar(select(Transaction))
 
 
 def test_pagination_stops_on_error_or_repeated_cursor(monkeypatch, configured):
@@ -437,9 +526,13 @@ def test_unexpected_parse_failure_has_safe_durable_diagnostics_and_keeps_lease(c
 
     def request(self, *args, **kwargs):
         self.last_http_status = 200
-        return {"transactions": [{**raw(creditor_account={"iban": None}), "remittance_information": [marker]}]}
+        return {"transactions": [raw()]}
+
+    def unexpected_parser_error(*args):
+        raise AttributeError(marker)
 
     monkeypatch.setattr(EnableBanking, "call", request)
+    monkeypatch.setattr(bank_sync, "movement", unexpected_parser_error)
     response = client.post(household["path"] + "/bank/sync")
     assert response.status_code == 200 and response.json()["failed"] == 1
     assert response.json()["synchronized"] == response.json()["waiting"] == 0

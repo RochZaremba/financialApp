@@ -192,7 +192,31 @@ def minor_amount(value):
         raise BankError("INVALID_BANK_AMOUNT") from None
 
 
+def _optional_object(value):
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise BankError("INVALID_BANK_MOVEMENT")
+    return value
+
+
+def _optional_text(value):
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise BankError("INVALID_BANK_MOVEMENT")
+    return value
+
+
+def normalized_iban(account):
+    # Missing or explicit null both mean the optional identifier was not supplied.
+    # Do not stringify malformed data or manufacture an identity for reconciliation.
+    return _optional_text(_optional_object(account).get("iban")).replace(" ", "").upper()
+
+
 def movement(row, currency):
+    if not isinstance(row, dict):
+        raise BankError("INVALID_BANK_MOVEMENT")
     if row.get("status") != "BOOK":
         return None
     try:
@@ -206,16 +230,20 @@ def movement(row, currency):
         day = date.fromisoformat(row["booking_date"])
         if not 2000 <= day.year <= 2100:
             raise ValueError()
-        party = row.get("creditor" if direction == "DBIT" else "debtor") or {}
-        descriptions = row.get("remittance_information", [])
+        party = _optional_object(row.get("creditor" if direction == "DBIT" else "debtor"))
+        name = _optional_text(party.get("name"))
+        descriptions = row.get("remittance_information")
+        if descriptions is None:
+            descriptions = []
         if isinstance(descriptions, str):
             descriptions = [descriptions]
-        description = " · ".join(str(v) for v in [party.get("name", ""), *descriptions] if v)[:160] or "Operacja bankowa"
+        if not isinstance(descriptions, list) or any(not isinstance(value, str) for value in descriptions):
+            raise BankError("INVALID_BANK_MOVEMENT")
+        description = " · ".join(value for value in [name, *descriptions] if value)[:160] or "Operacja bankowa"
         reference = row.get("entry_reference")
         if reference is not None and not isinstance(reference, str):
             raise ValueError()
-        counterpart = row.get("creditor_account" if direction == "DBIT" else "debtor_account") or {}
-        iban = counterpart.get("iban", "").replace(" ", "").upper()
+        iban = normalized_iban(row.get("creditor_account" if direction == "DBIT" else "debtor_account"))
         return dict(
             amount=-amount if direction == "DBIT" else amount,
             date=day,
