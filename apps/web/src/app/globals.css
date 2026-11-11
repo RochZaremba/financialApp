@@ -5120,3 +5120,14 @@ input.meter-file-input {
 .bank-activation input[type="file"] {
   max-width: 100%;
 }
+
+.buffer-recipients, .balance-history { list-style: none; margin: 16px 0 0; padding: 0; }
+.buffer-recipients li { display: flex; justify-content: space-between; align-items: start; gap: 16px; padding: 14px 0; border-top: 1px solid var(--border); }
+.buffer-recipients small, .balance-history small { display: block; margin-top: 4px; color: var(--muted); }
+.buffer-note { display: block; margin-top: 5px; color: var(--green); }
+.balance-confirm { margin-top: 16px; padding: 18px; border: 1px solid var(--border); border-radius: 14px; }
+.bank-align details, .refund-panel details { margin-top: 16px; }
+.balance-history li { display: grid; gap: 5px; padding: 14px 0; border-top: 1px solid var(--border); }
+.refund-panel form { display: grid; gap: 16px; margin-top: 16px; }
+@media (max-width: 540px) { .buffer-recipients li { flex-wrap: wrap; gap: 8px; } .bank-align .button { width: 100%; } }
+.budget-buffer summary, .bank-align summary, .refund-panel summary { min-height: 44px; padding: 12px 0; cursor: pointer; }

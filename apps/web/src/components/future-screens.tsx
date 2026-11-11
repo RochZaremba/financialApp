@@ -261,6 +261,11 @@ export function AnalyticsScreen() {
   const rows = a.budget.allocations
     .filter((x) => x.kind === "category" && x.spent > 0)
     .sort((x, y) => y.spent - x.spent);
+  const positiveSpending = Math.max(
+    1,
+    a.budget.expenses,
+    rows.reduce((sum, row) => sum + row.spent, 0),
+  );
   const max = Math.max(1, ...a.trend.map((x) => x.spent));
   return (
     <>
@@ -268,7 +273,7 @@ export function AnalyticsScreen() {
         title="Wasz miesiąc w liczbach."
         description="Kilka liczb, które pomagają podjąć dobre decyzje."
       />
-      {a.budget.spent === 0 ? (
+      {a.budget.spent === 0 && !a.budget.refunds ? (
         <Card>
           <Empty
             icon="basket"
@@ -284,7 +289,12 @@ export function AnalyticsScreen() {
             <Card>
               <span className="eyebrow">WSPÓLNE WYDATKI</span>
               <strong>{money(a.budget.expenses + a.budget.pocket)}</strong>
-              <small>Zakupy i wypłacone kieszonkowe</small>
+              <small>
+                Zakupy i kieszonkowe, po zwrotach
+                {a.budget.refunds
+                  ? ` (${money(a.budget.refunds)} zwrotów)`
+                  : ""}
+              </small>
             </Card>
             <Card>
               <span className="eyebrow">ODŁOŻONE W TYM MIESIĄCU</span>
@@ -322,6 +332,12 @@ export function AnalyticsScreen() {
           <div className="two-columns analytics-columns">
             <Card>
               <SectionTitle title="Na co wydajecie?" />
+              {a.budget.refunds > 0 && (
+                <p className="muted small">
+                  Kwoty uwzględniają zwroty. Udziały porównują kategorie z
+                  dodatnim wydatkiem; zwrotów nie traktujemy jako dochodu.
+                </p>
+              )}
               {rows.length ? (
                 rows.map((row) => {
                   const cat = data.categories.find(
@@ -336,11 +352,11 @@ export function AnalyticsScreen() {
                       </div>
                       <Progress
                         value={row.spent}
-                        total={a.budget.expenses}
+                        total={positiveSpending}
                         color={cat?.color}
                       />
                       <small>
-                        {Math.round((row.spent / a.budget.expenses) * 100)}%
+                        {Math.round((row.spent / positiveSpending) * 100)}%
                         wydatków · plan {money(row.amount)}
                       </small>
                     </div>
@@ -584,9 +600,9 @@ export function AccountsScreen() {
       <div className="quiet-tip">
         <Landmark size={18} />
         <p>
-          Te salda wynikają z zapisanych transakcji. Po połączeniu banku porównacie
-          je z saldem bankowym w ekranie Bank. Konto osobiste po wypłacie
-          kieszonkowego nie należy do wspólnego budżetu.
+          Te salda wynikają z zapisanych transakcji. Po połączeniu banku
+          porównacie je z saldem bankowym w ekranie Bank. Konto osobiste po
+          wypłacie kieszonkowego nie należy do wspólnego budżetu.
         </p>
       </div>
     </>

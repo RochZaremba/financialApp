@@ -34,6 +34,11 @@ export function ManualTransaction({
   const command = useCommand();
   const router = useRouter();
   const documentary = initial?.source === "receipt";
+  const accountLocked =
+    !!initial?.bank_linked ||
+    (initial?.refunded_amount || 0) > 0 ||
+    initial?.source === "bank";
+  const financialLocked = documentary || accountLocked;
   const [selectedMember, setSelectedMember] = useState(
     initial?.member_id || memberId || data.members[0]?.id || "",
   );
@@ -233,14 +238,14 @@ export function ManualTransaction({
         <div className="form-grid">
           <MoneyField
             label="Kwota (zł)"
-            readOnly={documentary}
+            readOnly={financialLocked}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             required
           />
           <Field
             label="Data"
-            readOnly={documentary}
+            readOnly={financialLocked}
             name="date"
             type="date"
             defaultValue={date}
@@ -251,7 +256,11 @@ export function ManualTransaction({
         </div>
         <Field
           label={
-            kind === "income" ? "Skąd te pieniądze?" : "Nazwa lub krótki opis"
+            initial?.is_refund
+              ? "Opis zwrotu"
+              : kind === "income"
+                ? "Skąd te pieniądze?"
+                : "Nazwa lub krótki opis"
           }
           name="description"
           defaultValue={initial?.description}
@@ -267,9 +276,13 @@ export function ManualTransaction({
                   : "np. Odkładamy na wakacje"
           }
         />
+        {accountLocked && (
+          <input type="hidden" name="account" value={sourceAccount} />
+        )}
         <div className="form-grid">
           <Select
             name="account"
+            disabled={accountLocked}
             label={kind === "income" ? "Konto docelowe" : "Z konta"}
             value={sourceAccount}
             onChange={(e) => {

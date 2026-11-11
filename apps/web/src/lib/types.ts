@@ -53,6 +53,9 @@ export type Goal = {
   estimated_date: string | null;
 };
 export type Allocation = {
+  raw_remaining?: number;
+  buffer_received?: number;
+  buffer_used?: number;
   id: string;
   kind: "category" | "pocket" | "goal";
   reference_id: string;
@@ -71,6 +74,26 @@ export type IncomeSource = {
   amount: number;
 };
 export type Budget = {
+  buffer_category_id: string | null;
+  refunds: number;
+  buffer: null | {
+    category_id: string;
+    label: string;
+    planned: number;
+    direct_spent: number;
+    available_before_cover: number;
+    covered: number;
+    uncovered: number;
+    remaining: number;
+    recipients: {
+      kind: string;
+      reference_id: string;
+      label: string;
+      overrun: number;
+      covered: number;
+      uncovered: number;
+    }[];
+  };
   available: number;
   carry_in: number;
   carry_out: number;
@@ -93,6 +116,12 @@ export type Budget = {
 };
 export type Split = { category_id: string; amount: number };
 export type Transaction = {
+  bank_linked: boolean;
+  is_refund: boolean;
+  refund_of_id: string | null;
+  refund_of_description: string | null;
+  refunded_amount: number;
+  refundable_amount: number;
   created_by_name?: string | null;
   created_by?: string | null;
   created_at?: string;
@@ -228,6 +257,7 @@ export type Analytics = {
 };
 
 export type BudgetCopyPreview = {
+  buffer_category_id: string | null;
   source_month: string;
   planned_income: number;
   income_sources: Omit<IncomeSource, "id">[];

@@ -182,7 +182,7 @@ def test_automatic_exact_expense_durable_retry_quota_and_private_export(client, 
     assert len(exported.json()["bank_entries"]) == 1 and "cipher" not in exported.text
 
 
-def test_duplicate_manual_candidate_requires_explicit_match(client, household, configured, monkeypatch):
+def test_unique_manual_candidate_is_linked_automatically(client, household, configured, monkeypatch):
     amount = 1234
     account = household["data"]["accounts"][0]["id"]
     tx = client.post(
@@ -195,12 +195,8 @@ def test_duplicate_manual_candidate_requires_explicit_match(client, household, c
     assert bank_sync.sync_connection(configured, connection)
     status = client.get(household["path"] + "/bank").json()
     entry = status["entries"][0]
-    assert entry["transaction"] is None and entry["candidates"][0]["id"] == tx["id"]
-    result = client.post(
-        household["path"] + f"/bank/entries/{entry['id']}/resolve",
-        json={"action": "match", "transaction_id": tx["id"], "description": "Pasuje", "expected_updated_at": entry["updated_at"]},
-    )
-    assert result.status_code == 200, result.text
+    assert entry["transaction"]["id"] == tx["id"] and entry["reviewed"] and entry["match_method"] == "unique"
+    assert client.post(household["path"] + "/bank/reconcile").json() == {"matched": 0, "refunds": 0}
     with SessionLocal() as db:
         assert db.scalar(select(func.count()).select_from(Transaction)) == 1
 
@@ -449,11 +445,10 @@ def test_bank_first_receipt_enriches_without_duplicate_and_protects_amount(clien
     }
     finalize = household["path"] + "/receipts/" + receipt["id"] + "/finalize"
     unlinked = {k: v for k, v in payload.items() if not k.startswith("target_")}
-    assert client.post(finalize, json=unlinked).status_code == 409
     assert client.post(finalize, json={**payload, "target_expected_updated_at": "2020-01-01T00:00:00Z"}).status_code == 409
     with SessionLocal() as db:
         assert db.scalar(select(func.count()).select_from(Transaction)) == 1
-    response = client.post(finalize, json=payload)
+    response = client.post(finalize, json=unlinked)
     assert response.status_code == 200, response.text
     assert response.json()["id"] == tx["id"]
     assert client.post(household["path"] + "/receipts/" + receipt["id"] + "/finalize", json=payload).json()["id"] == tx["id"]
@@ -925,3 +920,314 @@ def test_first_import_is_baseline_and_only_future_new_expenses_book_automaticall
         assert db.scalar(select(func.count()).select_from(Transaction)) == 1
         assert db.scalar(select(Transaction)).amount == 200
         assert db.scalar(select(func.count()).select_from(BankEntry)) == 2
+
+
+def test_single_bank_pair_in_reverse_order_and_placeholder_merge(client, household, configured, monkeypatch):
+    connection, _ = make_account(household, configured)
+    fake_feed(monkeypatch, [raw()])
+    assert bank_sync.sync_connection(configured, connection)
+    before = client.get(household["path"] + "/bank").json()["entries"][0]
+    assert before["transaction"]
+    account = household["data"]["accounts"][0]["id"]
+    tx = client.post(
+        household["path"] + "/transactions",
+        json={
+            "kind": "expense",
+            "amount": 1234,
+            "date": today().isoformat(),
+            "account_id": account,
+            "description": "Paragon dodany później",
+        },
+        headers={"Idempotency-Key": uuid4().hex},
+    )
+    assert tx.status_code == 201, tx.text
+    entry = client.get(household["path"] + "/bank").json()["entries"][0]
+    assert entry["transaction"]["id"] == tx.json()["id"] and entry["match_method"] == "unique"
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Transaction)) == 1
+        assert not db.get(Transaction, before["transaction"]["id"])
+
+
+@pytest.mark.parametrize("two_bank_entries", [False, True])
+def test_ambiguous_graph_never_picks_arbitrary_matching_pair(client, household, configured, monkeypatch, two_bank_entries):
+    account = household["data"]["accounts"][0]["id"]
+    for index in range(1 if two_bank_entries else 2):
+        assert (
+            client.post(
+                household["path"] + "/transactions",
+                json={
+                    "kind": "expense",
+                    "amount": 1234,
+                    "date": today().isoformat(),
+                    "account_id": account,
+                    "description": "Równy zakup " + str(index),
+                },
+                headers={"Idempotency-Key": uuid4().hex},
+            ).status_code
+            == 201
+        )
+    connection, _ = make_account(household, configured)
+    fake_feed(monkeypatch, [raw("one"), raw("two")] if two_bank_entries else [raw()])
+    assert bank_sync.sync_connection(configured, connection)
+    entries = client.get(household["path"] + "/bank").json()["entries"]
+    assert all(e["transaction"] is None and not e["reviewed"] for e in entries)
+
+
+def test_real_credit_becomes_unique_refund_and_is_not_income(client, household, configured, monkeypatch):
+    account = household["data"]["accounts"][0]["id"]
+    category = household["data"]["categories"][0]["id"]
+    original = client.post(
+        household["path"] + "/transactions",
+        json={
+            "kind": "expense",
+            "amount": 24999,
+            "date": today().isoformat(),
+            "account_id": account,
+            "description": "CALZEDONIA",
+            "allocations": [{"category_id": category, "amount": 24999}],
+        },
+        headers={"Idempotency-Key": uuid4().hex},
+    ).json()
+    connection, _ = make_account(household, configured)
+    debit = raw("purchase", amount="249.99")
+    debit["creditor"] = {"name": "CALZEDONIA"}
+    fake_feed(monkeypatch, [debit])
+    assert bank_sync.sync_connection(configured, connection)
+    credit = raw("return", amount="249.99", direction="CRDT")
+    credit["debtor"] = {"name": "CALZEDONIA"}
+    credit["remittance_information"] = ["ZWROT BLIK"]
+    due(connection)
+    fake_feed(monkeypatch, [debit, credit])
+    assert bank_sync.sync_connection(configured, connection)
+    status = client.get(household["path"] + "/bank").json()
+    returned = next(e for e in status["entries"] if e["amount"] > 0)
+    assert (
+        returned["reviewed"] and returned["transaction"]["kind"] == "refund" and returned["transaction"]["refund_of_id"] == original["id"]
+    )
+    assert returned["match_method"] == "refund"
+    budget = client.get(household["path"] + "/overview?month=" + today().strftime("%Y-%m")).json()["budget"]
+    assert budget["income"] == 0 and budget["expenses"] == 0 and budget["refunds"] == 24999
+    due(connection)
+    assert bank_sync.sync_connection(configured, connection)
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Transaction)) == 2
+    result = client.post(
+        household["path"] + "/bank/entries/" + returned["id"] + "/resolve",
+        json={
+            "action": "income",
+            "description": "Jednak zwykły wpływ",
+            "expected_updated_at": returned["updated_at"],
+            "expected_transaction_updated_at": returned["transaction"]["updated_at"],
+        },
+    )
+    assert result.status_code == 200, result.text
+    budget = client.get(household["path"] + "/overview?month=" + today().strftime("%Y-%m")).json()["budget"]
+    assert budget["income"] == 24999 and budget["expenses"] == 24999 and budget["refunds"] == 0
+
+
+def test_equal_debits_and_unrelated_salary_are_never_automatic_refunds(client, household, configured, monkeypatch):
+    connection, _ = make_account(household, configured)
+    debit = raw("one", amount="249.99")
+    debit["creditor"] = {"name": "CALZEDONIA"}
+    fake_feed(monkeypatch, [debit])
+    assert bank_sync.sync_connection(configured, connection)
+    debit2 = {**debit, "entry_reference": "two"}
+    salary = raw("salary", amount="249.99", direction="CRDT")
+    salary["debtor"] = {"name": "Pracodawca Inna Firma"}
+    fake_feed(monkeypatch, [debit, debit2, salary])
+    due(connection)
+    assert bank_sync.sync_connection(configured, connection)
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Transaction).where(Transaction.refund_of_id.is_not(None))) == 0
+        assert db.scalar(select(func.count()).select_from(Transaction).where(Transaction.kind == "expense")) == 2
+
+
+def test_balance_alignment_is_exact_idempotent_and_not_a_budget_movement(client, household, configured):
+    from app.models import Account, AccountAdjustment
+
+    _, bank_id = make_account(household, configured)
+    moment = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        bank = db.get(BankAccount, bank_id)
+        bank.balance = 158353
+        bank.balance_at = moment
+        db.get(Account, bank.account_id).opening_balance = 510157
+        db.commit()
+    data = {"expected_app_balance": 510157, "expected_bank_balance": 158353, "expected_bank_balance_at": moment.isoformat()}
+    path = household["path"] + "/bank/accounts/" + bank_id + "/align"
+    key = uuid4().hex
+    first = client.post(path, json=data, headers={"Idempotency-Key": key})
+    assert first.status_code == 200, first.text
+    assert first.json()["amount"] == -351804 and first.json()["balance_after"] == 158353
+    assert client.post(path, json=data, headers={"Idempotency-Key": key}).json()["id"] == first.json()["id"]
+    assert client.post(path, json=data, headers={"Idempotency-Key": uuid4().hex}).status_code == 409
+    overview = client.get(household["path"] + "/overview?month=" + today().strftime("%Y-%m")).json()
+    assert overview["accounts"][0]["balance"] == 158353 and overview["budget"]["income"] == 0 and overview["budget"]["expenses"] == 0
+    status = client.get(household["path"] + "/bank").json()
+    assert status["accounts"][0]["difference"] == 0 and status["accounts"][0]["adjustments"][0]["created_by_name"] == "Roch"
+    exported = client.get(household["path"] + "/export").json()
+    assert exported["account_adjustments"][0]["amount"] == -351804
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(AccountAdjustment)) == 1
+        member = db.scalar(select(Member).where(Member.household_id == household["id"], Member.user_id == configured.owner_id))
+        member.role = "member"
+        db.commit()
+    assert client.post(path, json=data, headers={"Idempotency-Key": uuid4().hex}).status_code == 403
+
+
+def test_two_equal_refund_credits_competing_for_one_purchase_stay_unresolved(client, household, configured, monkeypatch):
+    account = household["data"]["accounts"][0]["id"]
+    original = client.post(
+        household["path"] + "/transactions",
+        json={"kind": "expense", "amount": 1234, "date": today().isoformat(), "account_id": account, "description": "CALZEDONIA"},
+        headers={"Idempotency-Key": uuid4().hex},
+    )
+    assert original.status_code == 201
+    connection, _ = make_account(household, configured)
+    credits = [raw("return-" + str(i), direction="CRDT") for i in range(2)]
+    for r in credits:
+        r["debtor"] = {"name": "CALZEDONIA"}
+        r["remittance_information"] = ["ZWROT"]
+    fake_feed(monkeypatch, credits)
+    assert bank_sync.sync_connection(configured, connection)
+    entries = client.get(household["path"] + "/bank").json()["entries"]
+    assert all(e["transaction"] is None for e in entries)
+
+
+def test_explicit_separate_receipt_is_not_later_merged_by_automation(client, household, configured, monkeypatch):
+    connection, _ = make_account(household, configured)
+    fake_feed(monkeypatch, [raw()])
+    assert bank_sync.sync_connection(configured, connection)
+    bank_id = client.get(household["path"] + "/bank").json()["entries"][0]["transaction"]["id"]
+    fixture = Path(__file__).resolve().parents[3] / "fixtures/lidl.png"
+    receipt = client.post(
+        household["path"] + "/receipts",
+        files={"file": ("receipt.png", fixture.read_bytes(), "image/png")},
+        headers={"Idempotency-Key": uuid4().hex},
+    ).json()
+    data = {
+        "merchant": "Inny zakup",
+        "date": today().isoformat(),
+        "total": 1234,
+        "account_id": household["data"]["accounts"][0]["id"],
+        "acknowledge_bank_separate": True,
+        "items": [
+            {
+                "name": "Inny zakup",
+                "amount": 1234,
+                "category_id": household["data"]["categories"][0]["id"],
+                "confidence": 100,
+                "reviewed": True,
+            }
+        ],
+    }
+    response = client.post(household["path"] + "/receipts/" + receipt["id"] + "/finalize", json=data)
+    assert response.status_code == 200, response.text
+    assert response.json()["id"] != bank_id
+    assert client.post(household["path"] + "/bank/reconcile").status_code == 200
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Transaction)) == 2
+        assert db.get(Transaction, response.json()["id"]).bank_match_excluded
+        assert db.scalar(select(BankEntry)).transaction_id == bank_id
+
+
+def test_alignment_rejects_new_bank_snapshot_before_any_balance_change(client, household, configured):
+    from app.models import AccountAdjustment
+
+    _, bid = make_account(household, configured)
+    moment = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        bank = db.get(BankAccount, bid)
+        bank.balance = 10000
+        bank.balance_at = moment
+        db.commit()
+    body = {"expected_app_balance": 0, "expected_bank_balance": 10000, "expected_bank_balance_at": moment.isoformat()}
+    with SessionLocal() as db:
+        bank = db.get(BankAccount, bid)
+        bank.balance = 9000
+        bank.balance_at = moment + timedelta(seconds=1)
+        db.commit()
+    response = client.post(household["path"] + "/bank/accounts/" + bid + "/align", json=body, headers={"Idempotency-Key": uuid4().hex})
+    assert response.status_code == 409
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(AccountAdjustment)) == 0
+
+
+def test_legacy_bank_income_is_reclassified_as_refund_without_recording_cash_twice(client, household, configured, monkeypatch):
+    account = household["data"]["accounts"][0]["id"]
+    original = client.post(
+        household["path"] + "/transactions",
+        json={
+            "kind": "expense",
+            "amount": 1234,
+            "date": today().isoformat(),
+            "account_id": account,
+            "description": "Lidl",
+            "allocations": [{"category_id": household["data"]["categories"][0]["id"], "amount": 1234}],
+        },
+        headers={"Idempotency-Key": uuid4().hex},
+    ).json()
+    connection, _ = make_account(household, configured, initial=True)
+    credit = raw("legacy-return", direction="CRDT")
+    credit["debtor"] = {"name": "LIDL"}
+    credit["remittance_information"] = ["ZWROT"]
+    fake_feed(monkeypatch, [credit])
+    assert bank_sync.sync_connection(configured, connection)
+    entry = client.get(household["path"] + "/bank").json()["entries"][0]
+    # Reproduce the old version's recorded bank income (not a new explicit decision).
+    from app.domain import create_transaction
+    from app.schemas import TransactionInput
+
+    with SessionLocal() as db:
+        member = db.scalar(select(Member).where(Member.household_id == household["id"], Member.user_id == configured.owner_id))
+        income = create_transaction(
+            db,
+            member,
+            TransactionInput(kind="income", amount=1234, date=today(), account_id=account, description="LIDL ZWROT"),
+            "legacy-income-idempotency",
+            source="bank",
+            source_id=entry["id"],
+        )
+        record = db.get(BankEntry, entry["id"])
+        record.transaction_id = income.id
+        record.reviewed = True
+        record.match_method = None
+        income_id = income.id
+        db.commit()
+    before = client.get(household["path"] + "/overview?month=" + today().strftime("%Y-%m")).json()
+    result = client.post(household["path"] + "/bank/reconcile")
+    assert result.status_code == 200, result.text
+    assert result.json()["refunds"] == 1
+    after = client.get(household["path"] + "/overview?month=" + today().strftime("%Y-%m")).json()
+    assert after["accounts"][0]["balance"] == before["accounts"][0]["balance"] == 0
+    assert after["budget"]["income"] == 0 and after["budget"]["expenses"] == 0
+    record = client.get(household["path"] + "/bank").json()["entries"][0]
+    assert record["transaction"]["id"] == income_id and record["transaction"]["refund_of_id"] == original["id"]
+
+
+def test_concurrent_alignment_only_posts_one_correction(client, household, configured):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from app.models import AccountAdjustment
+
+    _, bid = make_account(household, configured)
+    moment = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        bank = db.get(BankAccount, bid)
+        bank.balance = 10000
+        bank.balance_at = moment
+        db.commit()
+    data = {"expected_app_balance": 0, "expected_bank_balance": 10000, "expected_bank_balance_at": moment.isoformat()}
+    ready = Barrier(2)
+
+    def write(index):
+        ready.wait(timeout=10)
+        return client.post(
+            household["path"] + "/bank/accounts/" + bid + "/align", json=data, headers={"Idempotency-Key": uuid4().hex}
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(write, range(2)))
+    assert sorted(statuses) == [200, 409]
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(AccountAdjustment)) == 1
