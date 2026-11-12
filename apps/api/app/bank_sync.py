@@ -25,7 +25,7 @@ def now():
     return datetime.now(timezone.utc)
 
 
-def matches(db, entry, account):
+def matches(db, entry, account, *, automatic=False):
     if not account.account_id:
         return []
     if entry.amount < 0:
@@ -50,6 +50,7 @@ def matches(db, entry, account):
                 Transaction.date <= entry.date + timedelta(days=7),
                 account_match,
                 ~linked,
+                Transaction.bank_match_excluded.is_(False) if automatic else True,
             )
             .order_by(Transaction.date.desc())
             .limit(100)
@@ -66,7 +67,12 @@ def matches_account(tx, amount, account_id):
 def register_expense(db, cfg, account, entry, member):
     # Credits may be salary, refunds or own transfers: require an explicit classification.
     # History and entries without stable bank IDs also remain in the bank inbox.
-    if entry.amount >= 0 or not entry.reliable or entry.date < account.created_at.astimezone(WARSAW).date() or matches(db, entry, account):
+    if (
+        entry.amount >= 0
+        or not entry.reliable
+        or entry.date < account.created_at.astimezone(WARSAW).date()
+        or matches(db, entry, account, automatic=True)
+    ):
         return
     if entry.counterparty_hash and db.scalar(
         select(BankAccount.id).where(BankAccount.household_id == cfg.household_id, BankAccount.iban_hash == entry.counterparty_hash)
@@ -169,6 +175,7 @@ def sync_connection(cfg, connection_id):
                 db.commit()
                 return False
             with db.begin_nested():
+                new_expenses = set()
                 for account, parsed, balance in batches:
                     stage = "save_entries"
                     db.refresh(account)
@@ -199,6 +206,7 @@ def sync_connection(cfg, connection_id):
                             reference_hash=hashed,
                             reliable=reliable,
                             reviewed=False,
+                            auto_refund_eligible=not initial_sync,
                             created_by=connection.user_id,
                         )
                         db.add(entry)
@@ -206,7 +214,7 @@ def sync_connection(cfg, connection_id):
                         # Establish a baseline first: even today's history may already
                         # be included in an existing opening balance or manual records.
                         if not initial_sync:
-                            register_expense(db, cfg, account, entry, member)
+                            new_expenses.add(entry.id)
                         for subscription in (
                             []
                             if initial_sync
@@ -221,6 +229,10 @@ def sync_connection(cfg, connection_id):
                     if balance is not None:
                         account.balance, account.balance_at = balance, now()
                     account.last_sync = now()
+                from .bank_matching import reconcile
+
+                stage = "save_entries"
+                reconcile(db, member, cfg, new_expenses=new_expenses)
                 stage = "commit"
                 connection.last_sync, connection.error_code, connection.sync_diagnostic = now(), None, None
                 audit(db, member, "bank.synced", connection.id)
@@ -344,6 +356,9 @@ def jobs():
         db.commit()
     for identifier in ids:
         sync_connection(cfg, identifier)
+    from .bank_matching import reconcile_background
+
+    reconcile_background(cfg)
     deliver(cfg)
 
 

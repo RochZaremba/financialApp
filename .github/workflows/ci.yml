@@ -44,10 +44,14 @@ jobs:
           ./scripts/check.sh
           .venv/bin/python scripts/admin-review.py --bank
       - name: Browser and test evidence
-        if: always()
+        # Diagnostics are best effort; test and release-package failures remain fatal.
+        if: ${{ !cancelled() }}
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          compression-level: 0
           retention-days: 7
           path: |
             artifacts/ui-review/

@@ -316,12 +316,10 @@ try {
     200,
   );
   await page.goto("/paragony/" + receipt.id);
+  await expect(page.getByText(/Dopasowano płatność bankową:/)).toBeVisible();
   await expect(
     page.getByLabel("Czy to płatność już pobrana z banku?", { exact: true }),
-  ).toBeVisible();
-  await page
-    .getByLabel("Czy to płatność już pobrana z banku?", { exact: true })
-    .selectOption(debit.transaction.id);
+  ).toHaveCount(0);
   await review("receipt-match");
   await page
     .getByRole("button", { name: "Zatwierdź paragon", exact: true })
@@ -374,6 +372,156 @@ try {
   assert.equal(transfers.length, 2);
   assert.ok(transfers.every((e) => !e.transaction));
   await review("new-and-own-transfer");
+  // A genuine credit with one matching merchant/purchase is a refund, not income.
+  const advancedRefund = await context.request.post(
+    "/api/__qa/advance?phase_value=2",
+  );
+  assert.equal(advancedRefund.status(), 200);
+  const refundStatus = await context.request
+    .get(base + "/bank")
+    .then((r) => r.json());
+  const returned = refundStatus.entries.find((e) => e.amount === 13975);
+  assert.equal(returned.transaction.kind, "refund");
+  assert.equal(returned.transaction.refund_of_id, debit.transaction.id);
+  assert.equal(returned.match_method, "refund");
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Pokaż historię", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: /^Zwrot/ })).toBeVisible();
+  await review("automatic-refund");
+
+  // Create a monthly buffer and check exact automatic cover, then a partial refund.
+  const food = data.categories[0].id,
+    householdCategory = data.categories[1].id;
+  const bufferResponse = await context.request.post(base + "/categories", {
+    data: { name: "Bufor", group: "Potrzeby" },
+    headers: { "Idempotency-Key": `buffer-${pass}` },
+  });
+  assert.equal(bufferResponse.status(), 201);
+  const buffer = await bufferResponse.json();
+  const plan = await context.request.put(
+    base + "/budget/" + today.slice(0, 7),
+    {
+      data: {
+        planned_income: 100000,
+        buffer_category_id: buffer.id,
+        allocations: [
+          { kind: "category", reference_id: food, amount: 10000 },
+          { kind: "category", reference_id: householdCategory, amount: 20000 },
+          { kind: "category", reference_id: buffer.id, amount: 0 },
+        ],
+      },
+      headers: { "Idempotency-Key": `buffer-plan-${pass}` },
+    },
+  );
+  assert.equal(plan.status(), 200);
+  const five = refundStatus.entries.find((e) => e.amount === -500);
+  assert.equal(
+    (
+      await context.request.put(
+        base + "/transactions/" + five.transaction.id + "/allocations",
+        { data: [{ category_id: householdCategory, amount: 500 }] },
+      )
+    ).status(),
+    200,
+  );
+  async function expense(name, amount, category, key) {
+    const result = await context.request.post(base + "/transactions", {
+      data: {
+        kind: "expense",
+        amount,
+        account_id: data.accounts[0].id,
+        date: today,
+        description: name,
+        allocations: [{ category_id: category, amount }],
+      },
+      headers: { "Idempotency-Key": key },
+    });
+    assert.equal(result.status(), 201);
+    return result.json();
+  }
+  const refundPurchase = await expense(
+    "Zakup do częściowego zwrotu QA",
+    15000,
+    food,
+    `partial-purchase-${pass}`,
+  );
+  await expense(
+    "Druga przekroczona koperta QA",
+    23000,
+    householdCategory,
+    `overrun-${pass}`,
+  );
+  await page.goto("/budzet");
+  const reserve = page.locator(".budget-buffer");
+  await expect(reserve.getByRole("heading", { name: /Bufor/ })).toBeVisible();
+  await reserve.locator("summary").click();
+  await expect(reserve.locator(".buffer-recipients li")).toHaveCount(2);
+  const beforeBuffer = await context.request
+    .get(base + "/overview?month=" + today.slice(0, 7))
+    .then((r) => r.json());
+  assert.equal(beforeBuffer.budget.buffer.covered, 8500);
+  assert.equal(beforeBuffer.budget.buffer.remaining, 61500);
+  await review("buffer-covered");
+
+  await page.goto("/transakcje?item=" + refundPurchase.id);
+  const purchaseRow = page
+    .locator(".transaction")
+    .filter({
+      has: page.getByText("Zakup do częściowego zwrotu QA", { exact: true }),
+    });
+  await expect(purchaseRow).toBeVisible();
+  await purchaseRow.getByText("Zarejestruj zwrot", { exact: true }).click();
+  await purchaseRow
+    .getByLabel("Kwota zwrotu (zł)", { exact: true })
+    .fill("40,00");
+  await review("manual-partial-refund");
+  await purchaseRow
+    .getByRole("button", { name: "Zapisz zwrot", exact: true })
+    .click();
+  await expect(purchaseRow.getByText(/Oddano już/)).toContainText("40,00");
+  await page.goto("/budzet");
+  await page.locator(".budget-buffer summary").click();
+  const afterBuffer = await context.request
+    .get(base + "/overview?month=" + today.slice(0, 7))
+    .then((r) => r.json());
+  assert.equal(afterBuffer.budget.buffer.covered, 4500);
+  assert.equal(afterBuffer.budget.buffer.remaining, 65500);
+  assert.equal(afterBuffer.budget.income, 2500);
+  assert.equal(afterBuffer.budget.expenses, 34500);
+  await review("buffer-after-refund");
+
+  // A conscious balance-only correction leaves budget income and expenses intact.
+  await page.goto("/bank");
+  const bankAccount = page.locator(".bank-account").first();
+  await bankAccount
+    .getByRole("button", {
+      name: "Wyrównaj saldo aplikacji do banku",
+      exact: true,
+    })
+    .click();
+  await expect(
+    bankAccount.getByRole("heading", { name: "Potwierdź korektę salda" }),
+  ).toBeVisible();
+  await review("balance-alignment-preview");
+  await bankAccount
+    .getByRole("button", { name: "Potwierdź wyrównanie", exact: true })
+    .click();
+  await expect(
+    bankAccount.getByText("Historia korekt salda (1)", { exact: true }),
+  ).toBeVisible();
+  await bankAccount.locator(".bank-align details summary").click();
+  const aligned = await context.request
+    .get(base + "/overview?month=" + today.slice(0, 7))
+    .then((r) => r.json());
+  assert.equal(
+    aligned.accounts.find((a) => a.id === data.accounts[0].id).balance,
+    100000,
+  );
+  assert.equal(aligned.budget.income, afterBuffer.budget.income);
+  assert.equal(aligned.budget.expenses, afterBuffer.budget.expenses);
+  await review("balance-aligned");
   const own = await context.request
     .post("/api/households", {
       data: { name: "Other QA home" },

@@ -184,7 +184,7 @@ test("complete household budget, receipts, goals and second-member flow", async 
   await go(page, "/transakcje");
   await page.getByLabel("Szukaj transakcji").fill("Lidl");
   const row = page.locator("details").filter({ hasText: "Lidl" });
-  await row.locator("summary").click();
+  await row.locator(":scope > summary").click();
   await expect(row.locator(".transaction-details")).toContainText("Jedzenie");
   await expect(row.locator(".transaction-details")).toContainText(
     "Dom i zakupy",

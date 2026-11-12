@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { BankBalanceAlign } from "./bank-balance-align";
 import { api, json } from "@/lib/api";
 import { money, warsawDate } from "@/lib/money";
 import { useApp, useCommand } from "./context";
@@ -12,6 +13,7 @@ import { PageHeading } from "./budget-screens";
 type Tx = {
   id: string;
   kind: string;
+  refund_of_id: string | null;
   amount: number;
   date: string;
   description: string;
@@ -28,6 +30,8 @@ type Entry = {
   updated_at: string;
   transaction: Tx | null;
   candidates: Tx[];
+  match_method: string | null;
+  refund_candidates: (Tx & { remaining_amount: number })[];
 };
 type BankAccount = {
   id: string;
@@ -39,6 +43,14 @@ type BankAccount = {
   app_balance: number | null;
   difference: number | null;
   balance_at: string | null;
+  adjustments: {
+    id: string;
+    amount: number;
+    balance_before: number;
+    balance_after: number;
+    created_at: string;
+    created_by_name: string | null;
+  }[];
 };
 type Connection = {
   id: string;
@@ -266,6 +278,34 @@ export function BankScreen() {
   const command = useCommand();
   const [history, setHistory] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
+  const query = useQueryClient();
+  const reconciled = useRef("");
+  const [matchMessage, setMatchMessage] = useState("");
+  const [matchError, setMatchError] = useState("");
+  const bankEnabled = !!state.data?.enabled;
+  useEffect(() => {
+    if (!bankEnabled || reconciled.current === household) return;
+    reconciled.current = household;
+    api<{ matched: number; refunds: number }>(
+      `/households/${household}/bank/reconcile`,
+      { method: "POST" },
+    )
+      .then((result) => {
+        if (result.matched || result.refunds) {
+          setMatchMessage(
+            `Połączono automatycznie: ${result.matched} operacji i ${result.refunds} zwrotów.`,
+          );
+          void query.invalidateQueries();
+        }
+      })
+      .catch((error) =>
+        setMatchError(
+          error instanceof Error
+            ? error.message
+            : "Nie udało się połączyć operacji.",
+        ),
+      );
+  }, [bankEnabled, household, query]);
   if (state.isPending) return <Skeleton />;
   if (state.isError)
     return (
@@ -330,6 +370,12 @@ export function BankScreen() {
         description="Operacje z banku, ich opisy i paragony — bez ponownego księgowania tego samego zakupu."
       />
       <ErrorMessage error={command.error} />
+      <ErrorMessage error={matchError} />
+      {matchMessage && (
+        <p className="notice" role="status">
+          {matchMessage}
+        </p>
+      )}
       <Card className="bank-status">
         <h2>Połączenie mBank</h2>
         <p>
@@ -530,8 +576,9 @@ function AccountMapping({
           </div>
           <p className="muted small">
             Dane banku: {stamp(bank.balance_at)}. Sprawdź nieuzupełnione
-            operacje i saldo początkowe. Różnicy nie zerujemy automatycznie.
+            operacje. Wyrównanie salda wykonujesz osobno i świadomie.
           </p>
+          <BankBalanceAlign bank={bank} owner={owner} />
         </>
       ) : owner ? (
         <form onSubmit={submit}>
@@ -587,6 +634,9 @@ function EntryCard({ entry, bank }: { entry: Entry; bank: BankAccount }) {
   const [category, setCategory] = useState("");
   const [target, setTarget] = useState(entry.candidates[0]?.id || "");
   const [destination, setDestination] = useState("");
+  const [refundTarget, setRefundTarget] = useState(
+    entry.refund_candidates?.[0]?.id || "",
+  );
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (
@@ -607,6 +657,12 @@ function EntryCard({ entry, bank }: { entry: Entry; bank: BankAccount }) {
               entry.transaction?.updated_at || null,
             transaction_id: target || null,
             destination_id: destination || null,
+            refund_of_id: action === "refund" ? refundTarget : null,
+            expected_original_updated_at:
+              action === "refund"
+                ? entry.refund_candidates?.find((tx) => tx.id === refundTarget)
+                    ?.updated_at || null
+                : null,
             allocations:
               category && entry.amount < 0
                 ? [{ category_id: category, amount: -entry.amount }]
@@ -620,7 +676,12 @@ function EntryCard({ entry, bank }: { entry: Entry; bank: BankAccount }) {
     <article className="bank-entry">
       <div className="section-title">
         <h3>
-          {entry.amount < 0 ? "Wydatek" : "Wpływ"} · {entry.date}
+          {entry.transaction?.kind === "refund"
+            ? "Zwrot"
+            : entry.amount < 0
+              ? "Wydatek"
+              : "Wpływ"}{" "}
+          · {entry.date}
         </h3>
         <strong>{money(entry.amount)}</strong>
       </div>
@@ -629,6 +690,20 @@ function EntryCard({ entry, bank }: { entry: Entry; bank: BankAccount }) {
         Rachunek …{bank.last4}
         {entry.reviewed ? " · Uzupełniono" : " · Do uzupełnienia"}
       </small>
+      {(entry.match_method === "unique" || entry.match_method === "refund") && (
+        <p className="buffer-note">
+          Połączono automatycznie — jednoznaczne dopasowanie.
+        </p>
+      )}
+      {entry.transaction?.refund_of_id && (
+        <p className="notice">
+          Zwrot pomniejsza koszt{" "}
+          <Link href={`/transakcje?item=${entry.transaction.refund_of_id}`}>
+            oryginalnego zakupu
+          </Link>
+          , nie zwiększa dochodu.
+        </p>
+      )}
       {!entry.reliable && (
         <p className="notice warning">
           Bank nie podał stałego identyfikatora. Sprawdź historię i możliwe
@@ -666,7 +741,19 @@ function EntryCard({ entry, bank }: { entry: Entry; bank: BankAccount }) {
             {!entry.transaction && entry.candidates.length > 0 && (
               <option value="match">To istniejący wpis / paragon</option>
             )}
-            <option value="transfer">Przelew pomiędzy własnymi kontami</option>
+            {entry.amount > 0 &&
+              !entry.transaction?.refund_of_id &&
+              !!entry.refund_candidates?.length && (
+                <option value="refund">Zwrot za wcześniejszy zakup</option>
+              )}
+            {entry.transaction?.refund_of_id && (
+              <option value="income">To zwykły wpływ, nie zwrot</option>
+            )}
+            {!entry.transaction?.refund_of_id && (
+              <option value="transfer">
+                Przelew pomiędzy własnymi kontami
+              </option>
+            )}
           </Select>
           {action === "match" && (
             <Select
@@ -678,6 +765,22 @@ function EntryCard({ entry, bank }: { entry: Entry; bank: BankAccount }) {
               {entry.candidates.map((tx) => (
                 <option key={tx.id} value={tx.id}>
                   {tx.date} · {tx.description} · {money(tx.amount)}
+                </option>
+              ))}
+            </Select>
+          )}
+          {action === "refund" && (
+            <Select
+              label="Zakup, którego dotyczy zwrot"
+              value={refundTarget}
+              onChange={(e) => setRefundTarget(e.target.value)}
+              required
+            >
+              <option value="">Wybierz zakup</option>
+              {entry.refund_candidates?.map((tx) => (
+                <option key={tx.id} value={tx.id}>
+                  {tx.date} · {tx.description} · Do zwrotu{" "}
+                  {money(tx.remaining_amount)}
                 </option>
               ))}
             </Select>
@@ -868,11 +971,32 @@ export function BankReceiptMatch({
       /^\d{4}-\d{2}-\d{2}$/.test(date),
   });
   if (!bank.data?.enabled || !choices.data?.length) return null;
+  if (choices.data.length === 1 && selected !== "new")
+    return (
+      <div className="bank-receipt-match">
+        <p className="notice">
+          Dopasowano płatność bankową: {choices.data[0].description} ·{" "}
+          {money(choices.data[0].amount)}. Paragon uzupełni ten wydatek
+          automatycznie.
+        </p>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => {
+            onSelect(null);
+            onSeparate(true);
+          }}
+        >
+          To jednak osobny zakup
+        </button>
+      </div>
+    );
   return (
     <div className="bank-receipt-match">
       <Select
         label="Czy to płatność już pobrana z banku?"
         value={selected}
+        required
         onChange={(event) => {
           onSeparate(event.target.value === "new");
           onSelect(

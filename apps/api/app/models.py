@@ -147,6 +147,7 @@ class Period(Scoped, Base):
     __tablename__ = "periods"
     month: Mapped[str] = mapped_column(String(7))
     planned_income: Mapped[int] = mapped_column(BigInteger, default=0)
+    buffer_category_id: Mapped[str | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
     __table_args__ = (UniqueConstraint("household_id", "month"), CheckConstraint("planned_income >= 0"))
 
 
@@ -228,6 +229,10 @@ class Transaction(Scoped, Base):
     status: Mapped[str] = mapped_column(String(20), default="categorized")
     source: Mapped[str] = mapped_column(String(20), default="manual")
     source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    refund_of_id: Mapped[str | None] = mapped_column(
+        ForeignKey("transactions.id", deferrable=True, initially="DEFERRED"), nullable=True, index=True
+    )
+    bank_match_excluded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     idempotency_key: Mapped[str] = mapped_column(String(100))
     request_hash: Mapped[str] = mapped_column(String(64))
     __table_args__ = (
@@ -239,7 +244,20 @@ class Transaction(Scoped, Base):
         CheckConstraint("kind != 'saving' or (goal_id is not null and destination_id is not null)"),
         CheckConstraint("kind != 'transfer' or destination_id is not null"),
         CheckConstraint("destination_id is null or destination_id != account_id"),
+        CheckConstraint(
+            "refund_of_id is null or (kind = 'income' and destination_id is null and refund_of_id != id)", name="transaction_refund_shape"
+        ),
     )
+
+
+class AccountAdjustment(Scoped, Base):
+    __tablename__ = "account_adjustments"
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    amount: Mapped[int] = mapped_column(BigInteger)
+    balance_before: Mapped[int] = mapped_column(BigInteger)
+    balance_after: Mapped[int] = mapped_column(BigInteger)
+    bank_balance_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (CheckConstraint("amount != 0 and balance_after - balance_before = amount"),)
 
 
 class TransactionAllocation(Scoped, Base):
@@ -399,8 +417,10 @@ class BankEntry(Scoped, Base):
     amount: Mapped[int] = mapped_column(BigInteger)
     date: Mapped[DateValue] = mapped_column(Date)
     description: Mapped[str] = mapped_column(String(160))
-    transaction_id: Mapped[str | None] = mapped_column(ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True)
+    transaction_id: Mapped[str | None] = mapped_column(ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True, index=True)
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
+    match_method: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    auto_refund_eligible: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     __table_args__ = (UniqueConstraint("bank_account_id", "reference_hash"), CheckConstraint("amount != 0"))
 
 

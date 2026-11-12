@@ -59,6 +59,7 @@ class BudgetInput(Schema):
     planned_income: Money | None = None
     income_sources: list[IncomeSourceInput] | None = Field(default=None, max_length=50)
     allocations: list[AllocationInput] = Field(max_length=150)
+    buffer_category_id: str | None = Field(default=None, min_length=1, max_length=36)
 
     @model_validator(mode="after")
     def income_valid(self):

@@ -121,11 +121,18 @@ def test_migration_preserves_existing_plan_and_blocks_destructive_downgrade(clie
     assert migrate("downgrade", "004").returncode == 0
     try:
         with SessionLocal() as db:
-            period = Period(
-                household_id=household["id"], month="2026-09", planned_income=1234567, created_by=household["data"]["members"][0]["user_id"]
+            from types import SimpleNamespace
+            from uuid import uuid4
+            from sqlalchemy import text
+
+            # Seed the frozen 004 schema without importing later ORM columns.
+            period = SimpleNamespace(id=str(uuid4()))
+            db.execute(
+                text(
+                    "INSERT INTO periods (id,household_id,month,planned_income,created_at,updated_at,created_by) VALUES (:id,:home,'2026-09',1234567,now(),now(),:actor)"
+                ),
+                {"id": period.id, "home": household["id"], "actor": household["data"]["members"][0]["user_id"]},
             )
-            db.add(period)
-            db.flush()
             allocation = BudgetAllocation(
                 household_id=household["id"],
                 period_id=period.id,

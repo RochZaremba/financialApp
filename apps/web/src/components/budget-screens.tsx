@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { RefundForm } from "./refund-form";
+import { BudgetBuffer } from "./budget-buffer";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -109,12 +111,17 @@ function Envelope({ a, data }: { a: Allocation; data: Overview }) {
           </span>
         </div>
         <Progress
-          value={a.spent}
-          total={a.amount + (a.carry_in || 0)}
+          value={a.spent + (a.buffer_used || 0)}
+          total={a.amount + (a.carry_in || 0) + (a.buffer_received || 0)}
           color={category?.color}
         />
+        {!!a.buffer_received && (
+          <small className="buffer-note">
+            Pokryte z bufora: {money(a.buffer_received)}
+          </small>
+        )}
         <div className="envelope-meta">
-          <span>{money(a.spent)} wykorzystane</span>
+          <span>{money(a.spent + (a.buffer_used || 0))} wykorzystane</span>
           <span>z {money(a.amount + (a.carry_in || 0))}</span>
         </div>
       </div>
@@ -500,6 +507,7 @@ export function BudgetScreen() {
               </p>
             )}
           </Card>
+          <BudgetBuffer buffer={b.buffer} />
           {b.unallocated > 0 && (
             <div className="notice warning">
               <Inbox size={18} />
@@ -546,9 +554,18 @@ export function BudgetScreen() {
                           />
                           <div>
                             <strong>{a.label}</strong>
+                            {!!a.buffer_received && (
+                              <small className="buffer-note">
+                                Z bufora: {money(a.buffer_received)}
+                              </small>
+                            )}
                             <Progress
-                              value={a.spent}
-                              total={a.amount + (a.carry_in || 0)}
+                              value={a.spent + (a.buffer_used || 0)}
+                              total={
+                                a.amount +
+                                (a.carry_in || 0) +
+                                (a.buffer_received || 0)
+                              }
                               color={category?.color}
                             />
                           </div>
@@ -565,7 +582,7 @@ export function BudgetScreen() {
                         </div>
                         <div>
                           <small>Wykorzystano</small>
-                          <Amount value={a.spent} />
+                          <Amount value={a.spent + (a.buffer_used || 0)} />
                         </div>
                         <div>
                           <small>Pozostało</small>
@@ -617,6 +634,14 @@ function BudgetEditor({ close }: { close: () => void }) {
   const [copyOpen, setCopyOpen] = useState(false);
   const [proposalOpen, setProposalOpen] = useState(false);
   const [revision] = useState(b.period?.updated_at || null);
+  const [bufferId, setBufferId] = useState(
+    b.period
+      ? b.buffer_category_id || ""
+      : data.categories.find(
+          (c) =>
+            !c.archived && c.name.trim().toLocaleLowerCase("pl-PL") === "bufor",
+        )?.id || "",
+  );
   const base: {
     kind: Allocation["kind"];
     reference_id: string;
@@ -689,14 +714,24 @@ function BudgetEditor({ close }: { close: () => void }) {
     }
   };
   const income = sources.reduce((sum, source) => sum + safe(source.amount), 0);
+  const bufferAmount = Math.max(
+    0,
+    income -
+      base
+        .filter((a) => a.reference_id !== bufferId)
+        .reduce((sum, a) => sum + safe(values[a.reference_id] || "0"), 0),
+  );
+  const plannedValue = (id: string) =>
+    id === bufferId ? bufferAmount : safe(values[id] || "0");
   const unassigned =
-    income - Object.values(values).reduce((sum, s) => sum + safe(s), 0);
+    income - base.reduce((sum, a) => sum + plannedValue(a.reference_id), 0);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     await command.run(
       async (key) => {
         const payload = {
           expected_updated_at: revision,
+          buffer_category_id: bufferId || null,
           income_sources: sources.map((source) => ({
             name: source.name.trim(),
             member_id: source.member_id || null,
@@ -705,7 +740,7 @@ function BudgetEditor({ close }: { close: () => void }) {
           allocations: base.map((a) => ({
             kind: a.kind,
             reference_id: a.reference_id,
-            amount: parseMoney(values[a.reference_id] || "0"),
+            amount: plannedValue(a.reference_id),
           })),
         };
         return api(
@@ -722,6 +757,7 @@ function BudgetEditor({ close }: { close: () => void }) {
       <MonthCopy
         onOpen={setCopyOpen}
         apply={(proposal) => {
+          setBufferId(proposal.buffer_category_id || "");
           setSources(
             proposal.income_sources.map((source, index) => ({
               ...source,
@@ -763,7 +799,7 @@ function BudgetEditor({ close }: { close: () => void }) {
           allocations: base.map((a) => ({
             kind: a.kind,
             reference_id: a.reference_id,
-            amount: parseMoney(values[a.reference_id] || "0"),
+            amount: plannedValue(a.reference_id),
           })),
         })}
         apply={(rows) =>
@@ -775,6 +811,28 @@ function BudgetEditor({ close }: { close: () => void }) {
           }))
         }
       />
+      <Card className="buffer-settings">
+        <Select
+          label="Koperta buforowa — automatyczne pokrywanie przekroczeń"
+          value={bufferId}
+          onChange={(e) => setBufferId(e.target.value)}
+        >
+          <option value="">Bez automatycznego bufora</option>
+          {data.categories
+            .filter((c) => !c.archived)
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+        </Select>
+        {bufferId && (
+          <p className="muted small">
+            Pozostałe {money(bufferAmount)} trafi automatycznie do bufora. Jego
+            wykorzystanie zobaczysz w szczegółach rezerwy.
+          </p>
+        )}
+      </Card>
       <Card className="income-plan">
         <div className="income-heading">
           <div>
@@ -932,7 +990,12 @@ function BudgetEditor({ close }: { close: () => void }) {
                       ? `Z poprzedniego miesiąca: ${money(b.allocations.find((row) => row.reference_id === a.reference_id)!.carry_in!)} już w kopercie.`
                       : undefined
                   }
-                  value={values[a.reference_id] || "0,00"}
+                  value={
+                    a.reference_id === bufferId
+                      ? moneyInput(bufferAmount)
+                      : values[a.reference_id] || "0,00"
+                  }
+                  readOnly={a.reference_id === bufferId}
                   onChange={(e) =>
                     setValues({ ...values, [a.reference_id]: e.target.value })
                   }
@@ -1009,19 +1072,21 @@ export function TransactionRows({
                 <span>
                   {dateLabel(t.date)}
                   <i />{" "}
-                  {t.kind === "income"
-                    ? "Wpływ"
-                    : t.kind === "pocket"
-                      ? "Kieszonkowe"
-                      : t.kind === "saving"
-                        ? "Oszczędności"
-                        : t.kind === "transfer"
-                          ? "Przelew między kontami"
-                          : t.status === "unallocated"
-                            ? "Do przypisania"
-                            : t.allocations.length > 1
-                              ? `${t.allocations.length} kategorie`
-                              : category?.name || "Wydatek"}
+                  {t.is_refund
+                    ? "Zwrot zakupu"
+                    : t.kind === "income"
+                      ? "Wpływ"
+                      : t.kind === "pocket"
+                        ? "Kieszonkowe"
+                        : t.kind === "saving"
+                          ? "Oszczędności"
+                          : t.kind === "transfer"
+                            ? "Przelew między kontami"
+                            : t.status === "unallocated"
+                              ? "Do przypisania"
+                              : t.allocations.length > 1
+                                ? `${t.allocations.length} kategorie`
+                                : category?.name || "Wydatek"}
                 </span>
                 <span className="record-author">
                   Dodano przez: {t.created_by_name || "Nieznany autor"}
@@ -1087,13 +1152,14 @@ export function TransactionRows({
                   <ArrowRight size={16} />
                 </Link>
               )}
+              <RefundForm transaction={t} />
               {t.source !== "surplus" && (
                 <Link className="text-button" href={`/transakcje?edit=${t.id}`}>
                   <Pencil size={16} />
                   Edytuj transakcję
                 </Link>
               )}
-              {t.status === "unallocated" && (
+              {t.status === "unallocated" && !t.is_refund && (
                 <CategorizeTransaction transaction={t} />
               )}
             </div>
@@ -1295,6 +1361,7 @@ export function TransactionsScreen() {
               <option value="">Wszystkie transakcje</option>
               <option value="expense">Wydatki</option>
               <option value="income">Wpływy</option>
+              <option value="refund">Zwroty zakupów</option>
               <option value="pocket">Kieszonkowe</option>
               <option value="saving">Oszczędności</option>
               <option value="transfer">Przelewy</option>

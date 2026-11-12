@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from .config import WARSAW
 from .models import (
     Account,
+    AccountAdjustment,
     Audit,
     BudgetAllocation,
     Category,
@@ -210,6 +211,15 @@ def creator_names(db, rows):
 
 def transaction_data(db, tx, authors=None):
     data = serialize(tx)
+    from .refunds import refunded_amount
+    from .models import BankEntry
+
+    data["bank_linked"] = bool(db.scalar(select(BankEntry.id).where(BankEntry.transaction_id == tx.id).limit(1)))
+    data["is_refund"] = bool(tx.refund_of_id)
+    data["refunded_amount"] = refunded_amount(db, tx.id) if tx.kind == "expense" else 0
+    data["refundable_amount"] = tx.amount - data["refunded_amount"] if tx.kind == "expense" else 0
+    original = db.get(Transaction, tx.refund_of_id) if tx.refund_of_id else None
+    data["refund_of_description"] = original.description if original else None
     data["created_by_name"] = (creator_names(db, [tx]) if authors is None else authors).get(tx.created_by)
     data["allocations"] = [
         serialize(a)
@@ -248,12 +258,15 @@ def budget_data(db, household_id, month):
     used = defaultdict(int)
     unallocated = 0
     category_totals = db.execute(
-        select(TransactionAllocation.category_id, func.sum(TransactionAllocation.amount))
+        select(
+            TransactionAllocation.category_id,
+            func.sum(case((Transaction.refund_of_id.is_not(None), -TransactionAllocation.amount), else_=TransactionAllocation.amount)),
+        )
         .join(Transaction, Transaction.id == TransactionAllocation.transaction_id)
         .where(
             TransactionAllocation.household_id == household_id,
             Transaction.household_id == household_id,
-            Transaction.kind == "expense",
+            (Transaction.kind == "expense") | Transaction.refund_of_id.is_not(None),
             Transaction.date >= start,
             Transaction.date <= end,
         )
@@ -265,6 +278,8 @@ def budget_data(db, household_id, month):
         if tx.kind == "expense":
             if tx.status == "unallocated":
                 unallocated += tx.amount
+        elif tx.refund_of_id and tx.status == "unallocated":
+            unallocated -= tx.amount
         elif tx.kind == "pocket":
             used[("pocket", tx.member_id)] += tx.amount
         elif tx.kind == "saving" and tx.source != "surplus":
@@ -342,14 +357,21 @@ def budget_data(db, household_id, month):
     # Keep that authoritative total visible without inventing personal attribution.
     if sum(source["amount"] for source in sources) != planned:
         sources = [dict(id=f"legacy-{period.id}", name="Dochód wspólny", member_id=None, amount=planned)]
+    from .buffers import buffer_data
+
+    reserve = buffer_data(allocations, period.buffer_category_id if period else None, planned)
     assigned = sum(a["amount"] for a in allocations)
-    expenses = sum(t.amount for t in txs if t.kind == "expense")
+    refunds = sum(t.amount for t in txs if t.refund_of_id)
+    expenses = sum(t.amount for t in txs if t.kind == "expense") - refunds
     pocket = sum(t.amount for t in txs if t.kind == "pocket")
     savings = sum(t.amount for t in txs if t.kind == "saving" and t.source != "surplus") + distributed
     return dict(
         period=serialize(period) if period else None,
         month=month,
         available=planned + carry_in,
+        buffer=reserve,
+        buffer_category_id=period.buffer_category_id if period else None,
+        refunds=refunds,
         carry_in=carry_in,
         carry_out=carry_out,
         distributed_out=distributed,
@@ -362,7 +384,7 @@ def budget_data(db, household_id, month):
         expenses=expenses,
         pocket=pocket,
         savings=savings,
-        income=sum(t.amount for t in txs if t.kind == "income"),
+        income=sum(t.amount for t in txs if t.kind == "income" and not t.refund_of_id),
         remaining=planned + carry_in - expenses - pocket - savings - carry_out,
         unallocated=unallocated,
         allocations=allocations,
@@ -382,7 +404,12 @@ def account_data(db, household_id):
         .where(Transaction.household_id == household_id, Transaction.destination_id.is_not(None))
         .group_by(Transaction.destination_id)
     )
-    for account_id, amount in list(outgoing) + list(incoming):
+    adjustments = db.execute(
+        select(AccountAdjustment.account_id, func.sum(AccountAdjustment.amount))
+        .where(AccountAdjustment.household_id == household_id)
+        .group_by(AccountAdjustment.account_id)
+    )
+    for account_id, amount in list(outgoing) + list(incoming) + list(adjustments):
         balances[account_id] += int(amount)
     return [dict(**serialize(a), balance=balances[a.id]) for a in accounts]
 

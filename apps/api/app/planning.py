@@ -7,10 +7,11 @@ from typing import Literal
 import httpx
 from fastapi import HTTPException
 from pydantic import Field
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from .config import settings
 from .domain import budget_data, month_dates, records, recurring_data, scoped, today
+from .money import divide_money
 from .models import Category, Goal, Member, Transaction, TransactionAllocation
 from .receipts import gemini_schema
 from .schemas import BudgetInput, Money, Schema
@@ -45,20 +46,6 @@ def provider_name():
     return None
 
 
-def divide_money(total, weights):
-    """Largest remainders with stable ties, using integer grosze only."""
-    if not weights:
-        return []
-    divisor = sum(weights)
-    weights = weights if divisor else [1] * len(weights)
-    divisor = sum(weights)
-    portions = [total * weight // divisor for weight in weights]
-    order = sorted(range(len(weights)), key=lambda i: (-(total * weights[i] % divisor), i))
-    for index in order[: total - sum(portions)]:
-        portions[index] += 1
-    return portions
-
-
 def context(db, household_id, month, draft):
     categories = [c for c in records(db, Category, household_id) if not c.archived]
     active_ids = {c.id for c in categories}
@@ -88,12 +75,15 @@ def context(db, household_id, month, draft):
     history_start = date(year, month0 + 1, 1)
     spent = dict(
         db.execute(
-            select(TransactionAllocation.category_id, func.sum(TransactionAllocation.amount))
+            select(
+                TransactionAllocation.category_id,
+                func.sum(case((Transaction.refund_of_id.is_not(None), -TransactionAllocation.amount), else_=TransactionAllocation.amount)),
+            )
             .join(Transaction, Transaction.id == TransactionAllocation.transaction_id)
             .where(
                 Transaction.household_id == household_id,
                 TransactionAllocation.household_id == household_id,
-                Transaction.kind == "expense",
+                (Transaction.kind == "expense") | Transaction.refund_of_id.is_not(None),
                 Transaction.date >= history_start,
                 Transaction.date < end,
             )
@@ -120,7 +110,7 @@ def context(db, household_id, month, draft):
             dict(
                 id=c.id,
                 name=c.name,
-                historical_spending=int(spent.get(c.id, 0)),
+                historical_spending=max(0, int(spent.get(c.id, 0))),
                 current_amount=existing.get(c.id, 0),
                 scheduled_amount=monthly.get(c.id, 0),
                 carried_amount=carried.get(c.id, 0),

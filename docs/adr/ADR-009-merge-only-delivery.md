@@ -15,7 +15,7 @@ The private production application runs on an ARM64 Oracle host with existing sy
 - Serialize deployments, finish in-flight writes, stop web/API, take private database/receipt backups and check origin/public health before updating current.
 - Publish a GitHub Release for that commit only after a successful deployment. Same-version retries are idempotent; older deliveries are refused.
 - Restore previous images on failure. Never automatically downgrade the schema or replace production data. Migrations must remain compatible with the previous image.
-- Run browser checks in the official Playwright image matching the lockfile version on AMD64 and ARM64; preserve screenshots and test evidence as temporary Actions artifacts.
+- Run browser checks in the official Playwright image matching the lockfile version on AMD64 and ARM64; attempt to preserve screenshots and test evidence as temporary Actions artifacts. Diagnostic uploads are cancelable, bounded to three minutes and best effort; their infrastructure failure cannot override a successful test gate. Tests, native production smoke, verified release-package transfer, backup, deployment health and publication ordering remain mandatory.
 
 ## Consequences
 

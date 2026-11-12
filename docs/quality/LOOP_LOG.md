@@ -516,3 +516,31 @@ Local results: **277 API tests, including 64 bank cases**, pass. Added debit/cre
 Two consecutive clean browser loops each pass **36** screenshot/axe/overflow checks at 390×844, 430×932, 768×1024 and 1440×900. The synthetic provider now returns null party names, account IBANs and credit remittance information. Both loops exercise the complete import/review/receipt match/own-transfer flows as well as diagnostic failures, with zero page errors and no accessibility/overflow defects. Evidence: `artifacts/bank-nullable-api-tests.log`, `bank-nullable-api-full.log`, `bank-nullable-browser-loops.log`, and `artifacts/ui-review/bank-{1,2}/`.
 
 Live completion is a separate acceptance condition: deploy via protected PR/release, restore the privately saved original due time after a temporary repair hold, then use one ordinary due synchronization. No shortened provider interval or renewed consent is needed. Statement content remains on Oracle; verification can expose only safe structural types/counts and outcome metadata. The initial live import failure is not marked resolved solely from synthetic tests.
+
+## Unique bank matching, refunds, automatic buffer and balance alignment — 2026-11-11
+
+Outcome: the only one-to-one bank/receipt/ledger match is linked automatically in either arrival order. A genuine uniquely matched bank credit can refund its original purchase; two equal debits cannot. Full/partial refunds reuse or record cash once, subtract spending on the refund date and inherit exact proportional categories. A monthly Bufor receives the residual plan and covers other envelope overruns only to its available amount, with recipient/covered/uncovered detail. The bank owner can explicitly confirm an audited balance-only correction against the displayed bank/app snapshot. ADR-024/025/026 and the feedback/acceptance logs record the user-authorized changes to earlier conservative defaults.
+
+Implementation-loop findings and repairs:
+
+- P1: matching the first candidate could steal a competing equal payment, and a delayed receipt could duplicate an uncategorized bank placeholder. Build the complete one-to-one candidate graph before linking, retain explicit separate-purchase choices, and merge only unapproved empty bank placeholders with auditable old/kept identities. Categorized/approved financial records are not deleted to guess duplicates.
+- P1: a matching credit could be booked twice or incorrectly treated as salary, and competing credits could overclaim a purchase. Reuse existing cash for legacy reclassification, require compatible merchant/account/date evidence, cap cumulative claims and preserve explicit ordinary-income decisions. Refunds never increase earned income. Notes preserve category splits; manual corrections recalculate them, while bank-linked financial fields remain fixed.
+- P1: simultaneous balance alignment must not append two corrections. Serialize with other household financial writes, validate app balance plus bank balance/time, and use request idempotency. The concurrent test produces one correction; stale/replayed snapshots cannot double-post it. The requested 510157 → 158353 example yields exactly −351804 grosze, without altering opening balance or budget spending/income.
+- P2: an older client omitting the buffer field could re-enable an explicitly disabled reserve. Infer a default only for a new plan, preserve an existing nullable setting, and copy the configured identity. Refunds release cover and insufficient reserve leaves the uncovered amount visible.
+- Regression harness: the new nested refund disclosure made existing broad summary selectors ambiguous. Scope the product and activity-review selectors to the transaction's direct summary; retain the same complete household assertions. An intermediate API run was contaminated by sharing a test database; the final complete suite uses a newly migrated, uniquely named disposable database. Previous-image checks archive actual base b2a9066 rather than stale local main.
+
+Final local verification:
+
+| Gate | Evidence/result |
+| --- | --- |
+| Complete API/domain/provider suite | **299 passed**, one existing Starlette TestClient deprecation warning; `artifacts/refunds-full-api.log` |
+| Frontend / deployment helpers | **13 Vitest + 20 pytest passed** |
+| Lint / typecheck / Ruff / formatting / production Next build / pip consistency | Passed; `artifacts/refunds-final-build.log` |
+| Fresh schema and migration preservation | 001–018 upgrade and empty roundtrip, new-field metadata comparison, existing users/movements preserved, open unique Bufor backfilled, closed months untouched, populated refund/adjustment downgrade refused; `artifacts/refunds-migrations.log` |
+| Previous b2a9066 API against schema 018 | **274 passed**, three migration-operation tests deselected; `artifacts/refunds-old-api.log` |
+| Existing product Chromium desktop/mobile E2E | **16 passed**; `artifacts/refunds-final-browser.log` |
+| Two final clean bank browser loops | **60 + 60** state/viewport/axe checks; `artifacts/ui-review/bank-{1,2}/results.json` |
+
+Both final loops run at 390×844, 430×932, 768×1024 and 1440×900, covering the existing activation/consent/two-account/two-member/diagnostics/receipt/push/own-transfer paths plus automatic full refund, partial manual refund, buffer cover/release and balance confirmation/history. Zero page errors, WCAG A/AA violations or horizontal overflow. Reviewed mobile reserve recipients/refund form and desktop before/after balance confirmation directly. Screenshots are in the same bank-{1,2} directories. All provider data/keys are synthetic; no real provider requests or customer financial mutations were used for QA. Disposable databases and private QA files are cleaned after each run.
+
+Previous-image tests establish additive schema compatibility and preservation of ordinary existing behavior; they do not claim an old UI understands the newly activated refund/buffer/adjustment semantics. Native ARM64 image smoke and actual deployment remain release gates. No known open P0/P1/P2 remains in the tested changed flows; physical phone delivery and a user's actual financial classification are not established by synthetic tests.

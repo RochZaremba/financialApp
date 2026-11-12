@@ -206,7 +206,7 @@ try {
     .locator("details.transaction")
     .filter({ hasText: `Wpływ Kai ${pass}` });
   await expect(income).toContainText("Dodano przez: Kaja");
-  await expense.locator("summary").click();
+  await expense.locator(":scope > summary").click();
   await expect(expense).toContainText("Autor wpisu");
   await review("transaction-authors");
   await page.goto(`/paragony/${receipt.id}`);

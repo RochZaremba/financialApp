@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import Field, StringConstraints
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
@@ -28,9 +28,11 @@ from .bank_diagnostics import public_diagnostic, safe_code
 from .config import settings
 from .bank_sync import matches, matches_account, sync_connection
 from .db import get_db
-from .domain import account_data, audit, create_transaction, scoped, today
+from .domain import account_data, audit, create_transaction, creator_names, fingerprint, scoped, serialize, today
 from .models import (
     Account,
+    AccountAdjustment,
+    Mutation,
     BankAccount,
     BankConnection,
     BankEntry,
@@ -43,13 +45,14 @@ from .models import (
     TransactionAllocation,
     User,
 )
-from .schemas import Schema, SplitInput, TransactionInput
+from .schemas import Schema, SignedMoney, SplitInput, TransactionInput
 from .security import current_user, digest, hasher, household_member, rate_limit
 from .settlements import ensure_open
 
 router = APIRouter(tags=["private bank integration"])
 Db = Annotated[Session, Depends(get_db)]
 Membership = Annotated[Member, Depends(household_member)]
+Key = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=100)]
 
 
 def bank_access(user_id, household_id=None):
@@ -67,7 +70,15 @@ def guard(member, household_id, owner=False):
 
 
 def transaction_view(tx):
-    return dict(id=tx.id, kind=tx.kind, amount=tx.amount, date=tx.date, description=tx.description, updated_at=tx.updated_at)
+    return dict(
+        id=tx.id,
+        kind="refund" if tx.refund_of_id else tx.kind,
+        amount=tx.amount,
+        date=tx.date,
+        description=tx.description,
+        updated_at=tx.updated_at,
+        refund_of_id=tx.refund_of_id,
+    )
 
 
 @router.get("/households/{household_id}/bank")
@@ -101,7 +112,18 @@ def bank_status(household_id: str, member: Membership, db: Db):
             .limit(501)
         )
     )
+    from .refunds import refund_candidates
+
     by_id = {a.id: a for a in accounts}
+    adjustments = list(
+        db.scalars(
+            select(AccountAdjustment)
+            .where(AccountAdjustment.household_id == household_id)
+            .order_by(AccountAdjustment.created_at.desc())
+            .limit(50)
+        )
+    )
+    authors = creator_names(db, adjustments)
     return dict(
         enabled=True,
         background_enabled=settings.app_env == "production",
@@ -136,6 +158,9 @@ def bank_status(household_id: str, member: Membership, db: Db):
                 balance_at=a.balance_at,
                 app_balance=balances.get(a.account_id),
                 difference=a.balance - balances[a.account_id] if a.balance is not None and a.account_id in balances else None,
+                adjustments=[
+                    dict(**serialize(r), created_by_name=authors.get(r.created_by)) for r in adjustments if r.account_id == a.account_id
+                ][:10],
             )
             for a in accounts
         ],
@@ -147,10 +172,17 @@ def bank_status(household_id: str, member: Membership, db: Db):
                 date=e.date,
                 description=e.description,
                 reliable=e.reliable,
+                match_method=e.match_method,
                 reviewed=e.reviewed,
                 updated_at=e.updated_at,
                 transaction=transaction_view(db.get(Transaction, e.transaction_id)) if e.transaction_id else None,
                 candidates=[transaction_view(tx) for tx in matches(db, e, by_id[e.bank_account_id])] if not e.transaction_id else [],
+                refund_candidates=[
+                    dict(**transaction_view(tx), remaining_amount=remaining)
+                    for tx, remaining in refund_candidates(db, household_id, e.amount, e.date, exclude_refund_id=e.transaction_id)
+                ]
+                if e.amount > 0
+                else [],
             )
             for e in entries[:500]
         ],
@@ -465,11 +497,13 @@ def bank_disconnect(household_id: str, connection_id: str, member: Membership, d
 
 
 class ResolveInput(Schema):
-    action: Literal["new", "match", "transfer", "describe"]
+    action: Literal["new", "match", "transfer", "describe", "refund", "income"]
     expected_updated_at: datetime
     expected_transaction_updated_at: datetime | None = None
     transaction_id: str | None = None
     destination_id: str | None = None
+    refund_of_id: str | None = None
+    expected_original_updated_at: datetime | None = None
     description: str = Field(min_length=1, max_length=160)
     allocations: list[SplitInput] = Field(default_factory=list, max_length=150)
 
@@ -485,7 +519,46 @@ def bank_resolve(household_id: str, entry_id: str, data: ResolveInput, member: M
     tx = scoped(db, Transaction, household_id, entry.transaction_id, lock=True) if entry.transaction_id else None
     if tx and tx.updated_at != data.expected_transaction_updated_at:
         raise HTTPException(409, "Transakcja została zmieniona. Odśwież listę.")
-    if data.action == "match":
+    if tx and tx.refund_of_id and data.action not in ("describe", "income"):
+        raise HTTPException(422, "Zapisany zwrot opisz lub zmień na zwykły wpływ przed inną klasyfikacją.")
+    if data.action == "refund":
+        from .refunds import RefundInput, create_refund
+
+        if entry.amount <= 0 or not data.refund_of_id or not account.account_id or not data.expected_original_updated_at:
+            raise HTTPException(422, "Wybierz zakup, którego dotyczy wpływ zwrotny.")
+        original = scoped(db, Transaction, household_id, data.refund_of_id, lock=True)
+        tx = create_refund(
+            db,
+            member,
+            original,
+            RefundInput(
+                amount=entry.amount,
+                date=entry.date,
+                description=data.description,
+                account_id=account.account_id,
+                expected_updated_at=data.expected_original_updated_at,
+            ),
+            "refund-classify:" + entry.id + ":" + digest(data.expected_updated_at.isoformat())[:12],
+            existing=tx,
+            source="bank",
+            source_id=entry.id,
+        )
+        entry.transaction_id, entry.reviewed = tx.id, True
+    elif data.action == "income":
+        if entry.amount <= 0 or not tx or not tx.refund_of_id:
+            raise HTTPException(422, "Ta operacja nie jest zapisanym zwrotem.")
+        ensure_open(db, household_id, tx.date.strftime("%Y-%m"))
+        original = db.get(Transaction, tx.refund_of_id)
+        tx.refund_of_id, tx.status, tx.description = None, "categorized", data.description
+        tx.updated_at, tx.updated_by = datetime.now(timezone.utc), member.user_id
+        if original:
+            original.updated_at, original.updated_by = datetime.now(timezone.utc), member.user_id
+        db.execute(delete(TransactionAllocation).where(TransactionAllocation.transaction_id == tx.id))
+        entry.reviewed = True
+    elif data.action == "describe" and tx and tx.refund_of_id:
+        tx.description, tx.updated_by, tx.updated_at = data.description, member.user_id, datetime.now(timezone.utc)
+        entry.reviewed = True
+    elif data.action == "match":
         if tx or not data.transaction_id:
             raise HTTPException(409, "Ten wpis ma już transakcję lub nie wybrano dopasowania.")
         target = scoped(db, Transaction, household_id, data.transaction_id, lock=True)
@@ -537,6 +610,9 @@ def bank_resolve(household_id: str, entry_id: str, data: ResolveInput, member: M
                 raise HTTPException(422, "Ten wpis ma już paragon lub pochodzi z ręcznego zapisu. Popraw go w odpowiednim ekranie.")
             from .domain import validate_transaction
 
+            from .refunds import protect_refunded_purchase
+
+            protect_refunded_purchase(db, tx, payload)
             validate_transaction(db, member, payload)
             for linked in db.scalars(select(BankEntry).where(BankEntry.household_id == household_id, BankEntry.transaction_id == tx.id)):
                 linked_account = scoped(db, BankAccount, household_id, linked.bank_account_id)
@@ -561,11 +637,77 @@ def bank_resolve(household_id: str, entry_id: str, data: ResolveInput, member: M
         entry.reviewed = True
         for task in db.scalars(select(ReviewTask).where(ReviewTask.transaction_id == tx.id, ReviewTask.household_id == household_id)):
             task.resolved = tx.status == "categorized"
+    entry.match_method = "manual"
     entry.updated_by = member.user_id
     entry.updated_at = datetime.now(timezone.utc)
+    if tx and tx.kind == "expense":
+        db.flush()
+        from .refunds import refund_allocations
+
+        refund_allocations(db, tx, member.user_id)
     audit(db, member, "bank.reviewed", entry.id)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/households/{household_id}/bank/reconcile")
+def bank_reconcile(household_id: str, member: Membership, db: Db):
+    from .bank_matching import reconcile
+
+    cfg = guard(member, household_id)
+    result = reconcile(db, member, cfg)
+    db.commit()
+    return result
+
+
+class BalanceAlignmentInput(Schema):
+    expected_app_balance: SignedMoney
+    expected_bank_balance: SignedMoney
+    expected_bank_balance_at: datetime
+
+
+@router.post("/households/{household_id}/bank/accounts/{bank_account_id}/align")
+def bank_align(household_id: str, bank_account_id: str, data: BalanceAlignmentInput, key: Key, member: Membership, db: Db):
+    guard(member, household_id, owner=True)
+    db.scalar(select(Household).where(Household.id == household_id).with_for_update())
+    signature = fingerprint("bank.align:" + bank_account_id, data.model_dump(mode="json"))
+    previous = db.scalar(select(Mutation).where(Mutation.household_id == household_id, Mutation.key == key))
+    if previous:
+        if previous.request_hash != signature or previous.resource != "bank.align":
+            raise HTTPException(409, "Ta korekta została już zapisana z innymi danymi.")
+        return serialize(scoped(db, AccountAdjustment, household_id, previous.entity_id))
+    bank = scoped(db, BankAccount, household_id, bank_account_id, lock=True)
+    if not bank.account_id or bank.balance is None or not bank.balance_at:
+        raise HTTPException(422, "Najpierw przypisz konto i pobierz saldo księgowe banku.")
+    current = next(a["balance"] for a in account_data(db, household_id) if a["id"] == bank.account_id)
+    if (
+        current != data.expected_app_balance
+        or bank.balance != data.expected_bank_balance
+        or bank.balance_at != data.expected_bank_balance_at
+    ):
+        raise HTTPException(409, "Saldo aplikacji lub dane banku zmieniły się. Odśwież je przed wyrównaniem.")
+    difference = bank.balance - current
+    if not difference:
+        return {"unchanged": True}
+    row = AccountAdjustment(
+        household_id=household_id,
+        account_id=bank.account_id,
+        amount=difference,
+        balance_before=current,
+        balance_after=bank.balance,
+        bank_balance_at=bank.balance_at,
+        created_by=member.user_id,
+    )
+    db.add(row)
+    db.flush()
+    db.add(
+        Mutation(
+            household_id=household_id, key=key, resource="bank.align", entity_id=row.id, request_hash=signature, created_by=member.user_id
+        )
+    )
+    audit(db, member, "bank.balance_aligned", row.id)
+    db.commit()
+    return serialize(row)
 
 
 class SubscriptionInput(Schema):

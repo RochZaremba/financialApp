@@ -84,6 +84,10 @@ def call(self, method, path, data=None, params=None):
             rows = [row("expense-1", "139.75"), row("income-1", "25.00", "CRDT")]
             if phase:
                 rows += [row("expense-2", "5.00"), row("own-transfer", "20.00", counterpart="PL00000000000000000000004321")]
+            if phase >= 2:
+                returned = row("refund-1", "139.75", "CRDT")
+                returned["debtor"], returned["remittance_information"] = {"name": "Lidl QA"}, ["ZWROT ZA ZAKUP"]
+                rows.append(returned)
         elif phase:
             rows = [row("own-transfer-credit", "20.00", "CRDT", counterpart="PL00000000000000000000001234")]
         return {"transactions": rows}
@@ -142,12 +146,12 @@ def sync_failure(mode: str, user=Depends(current_user)):
 
 
 @app.post("/__qa/advance")
-def advance(user=Depends(current_user)):
+def advance(user=Depends(current_user), phase_value: int = 1):
     global phase
     cfg = load_config()
     if not cfg or user.id != cfg.owner_id:
         raise HTTPException(403)
-    phase = 1
+    phase = phase_value
     with SessionLocal() as db:
         ids = list(
             db.scalars(select(BankConnection.id).where(BankConnection.household_id == cfg.household_id, BankConnection.status == "active"))

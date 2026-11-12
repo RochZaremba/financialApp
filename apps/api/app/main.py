@@ -32,6 +32,7 @@ from .domain import (
     goal_data,
     learn,
     month_dates,
+    normalize,
     month_valid,
     records,
     recurring_data,
@@ -56,6 +57,7 @@ from .exchange import value_accounts
 from .middleware import RequestBodyLimit
 from .models import (
     Account,
+    AccountAdjustment,
     BudgetSettlement,
     SurplusPolicy,
     Audit,
@@ -347,6 +349,7 @@ def budget_save(
     period = db.scalar(select(Period).where(Period.household_id == household_id, Period.month == month))
     if "expected_updated_at" in data.model_fields_set and data.expected_updated_at != (period.updated_at if period else None):
         raise HTTPException(409, "Ten plan został zmieniony. Odśwież stronę przed ponownym zapisem.")
+    new_period = period is None
     if not period:
         period = Period(household_id=household_id, month=month, created_by=member.user_id)
         db.add(period)
@@ -389,6 +392,22 @@ def budget_save(
                         created_by=member.user_id,
                     )
                 )
+    chosen_buffer = data.buffer_category_id if "buffer_category_id" in data.model_fields_set else period.buffer_category_id
+    if "buffer_category_id" not in data.model_fields_set and not chosen_buffer and new_period:
+        named = [c for c in records(db, Category, household_id) if not c.archived and normalize(c.name) == "bufor"]
+        chosen_buffer = named[0].id if len(named) == 1 else None
+    if chosen_buffer:
+        category = scoped(db, Category, household_id, chosen_buffer)
+        if category.archived:
+            raise HTTPException(422, "Wybierz aktywną kopertę buforową.")
+        from .schemas import AllocationInput
+
+        others = [a for a in data.allocations if not (a.kind == "category" and a.reference_id == chosen_buffer)]
+        reserve = max(0, period.planned_income - sum(a.amount for a in others))
+        data = data.model_copy(
+            update={"allocations": [*others, AllocationInput(kind="category", reference_id=chosen_buffer, amount=reserve)]}
+        )
+    period.buffer_category_id = chosen_buffer
     period.updated_by = member.user_id
     period.updated_at = datetime.now(timezone.utc)
     keep = set()
@@ -463,6 +482,7 @@ def budget_copy_preview(household_id: str, month: str, source_month: str, member
             allocations.append({k: row[k] for k in ("kind", "reference_id", "amount", "label")})
     return dict(
         source_month=source_month,
+        buffer_category_id=source["buffer_category_id"] if ("category", source["buffer_category_id"]) in active else None,
         planned_income=source["planned_income"],
         income_sources=[{k: row[k] for k in ("name", "member_id", "amount")} for row in source["income_sources"]],
         allocations=allocations,
@@ -504,8 +524,27 @@ def category_archive(household_id: str, category_id: str, member: Membership, db
 @app.post("/households/{household_id}/transactions", status_code=201)
 def transaction_create(household_id: str, data: TransactionInput, key: Key, member: Membership, db: Db):
     tx = create_transaction(db, member, data, key)
+    from .bank_matching import maybe_reconcile
+
+    maybe_reconcile(db, member)
     db.commit()
     return transaction_data(db, tx)
+
+
+from .refunds import RefundInput  # noqa: E402
+
+
+@app.post("/households/{household_id}/transactions/{transaction_id}/refund", status_code=201)
+def transaction_refund(household_id: str, transaction_id: str, data: RefundInput, key: Key, member: Membership, db: Db):
+    from .refunds import create_refund
+    from .bank_matching import maybe_reconcile
+
+    db.scalar(select(Household).where(Household.id == household_id).with_for_update())
+    original = scoped(db, Transaction, household_id, transaction_id, lock=True)
+    refund = create_refund(db, member, original, data, key)
+    maybe_reconcile(db, member)
+    db.commit()
+    return transaction_data(db, refund)
 
 
 @app.get("/households/{household_id}/transactions")
@@ -514,7 +553,7 @@ def transaction_list(
     member: Membership,
     db: Db,
     month: str | None = None,
-    kind: Literal["expense", "income", "pocket", "transfer", "saving"] | None = None,
+    kind: Literal["expense", "income", "refund", "pocket", "transfer", "saving"] | None = None,
     search: str = "",
     offset: int = 0,
     limit: int = 30,
@@ -542,7 +581,11 @@ def transaction_list(
         query = query.where(Transaction.date >= date_from)
     if date_to:
         query = query.where(Transaction.date <= date_to)
-    if kind:
+    if kind == "refund":
+        query = query.where(Transaction.refund_of_id.is_not(None))
+    elif kind == "income":
+        query = query.where(Transaction.kind == "income", Transaction.refund_of_id.is_(None))
+    elif kind:
         query = query.where(Transaction.kind == kind)
     if account_id:
         scoped(db, Account, household_id, account_id)
@@ -611,6 +654,43 @@ def transaction_edit(household_id: str, transaction_id: str, data: TransactionEd
     if data.kind != tx.kind:
         raise HTTPException(422, "Nie można zmienić rodzaju zapisanej transakcji.")
     movement = TransactionInput.model_validate(data.model_dump(exclude={"expected_updated_at"}))
+    from .refunds import protect_refunded_purchase
+
+    protect_refunded_purchase(db, tx, movement)
+    if tx.refund_of_id:
+        if any(getattr(tx, name) != getattr(movement, name) for name in ("amount", "date", "account_id")):
+            from .refunds import create_refund
+
+            original = scoped(db, Transaction, household_id, tx.refund_of_id, lock=True)
+            create_refund(
+                db,
+                member,
+                original,
+                RefundInput(
+                    amount=data.amount,
+                    date=data.date,
+                    account_id=data.account_id,
+                    description=data.description,
+                    expected_updated_at=original.updated_at,
+                ),
+                "refund-edit:" + digest(key),
+                existing=tx,
+                allow_edit=True,
+            )
+        tx.description, tx.updated_by, tx.updated_at = data.description, member.user_id, datetime.now(timezone.utc)
+        db.add(
+            Mutation(
+                household_id=household_id,
+                key=key,
+                resource="transaction.edit",
+                request_hash=signature,
+                entity_id=tx.id,
+                created_by=member.user_id,
+            )
+        )
+        audit(db, member, "refund.updated", tx.id)
+        db.commit()
+        return transaction_data(db, tx)
     if db.scalar(select(BankEntry.id).where(BankEntry.household_id == household_id, BankEntry.transaction_id == tx.id)):
         if (
             movement.amount != tx.amount
@@ -658,6 +738,9 @@ def transaction_edit(household_id: str, transaction_id: str, data: TransactionEd
             created_by=member.user_id,
         )
     )
+    from .refunds import refund_allocations
+
+    refund_allocations(db, tx, member.user_id)
     audit(db, member, "transaction.updated", tx.id)
     db.commit()
     return transaction_data(db, tx)
@@ -685,6 +768,11 @@ def transaction_categorize(household_id: str, transaction_id: str, data: list[Sp
     for task in db.scalars(select(ReviewTask).where(ReviewTask.household_id == household_id, ReviewTask.transaction_id == tx.id)):
         task.resolved = True
         task.updated_by = member.user_id
+    tx.updated_at = datetime.now(timezone.utc)
+    db.flush()
+    from .refunds import refund_allocations
+
+    refund_allocations(db, tx, member.user_id)
     audit(db, member, "transaction.categorized", tx.id)
     db.commit()
     return transaction_data(db, tx)
@@ -1112,6 +1200,14 @@ def receipt_finalize(household_id: str, receipt_id: str, data: FinalizeInput, me
         account_id=data.account_id,
         allocations=[SplitInput(category_id=k, amount=v) for k, v in totals.items() if v > 0],
     )
+    if not data.target_transaction_id and not data.acknowledge_bank_separate:
+        from .bank import receipt_candidates
+
+        candidates = receipt_candidates(db, household_id, data.total, data.account_id, data.date)
+        if len(candidates) == 1:
+            data = data.model_copy(
+                update={"target_transaction_id": candidates[0].id, "target_expected_updated_at": candidates[0].updated_at}
+            )
     if data.target_transaction_id:
         from .bank import guard
 
@@ -1142,10 +1238,18 @@ def receipt_finalize(household_id: str, receipt_id: str, data: FinalizeInput, me
         if not data.acknowledge_bank_separate and receipt_candidates(db, household_id, data.total, data.account_id, data.date):
             raise HTTPException(409, "Ta płatność może być już pobrana z banku. Wybierz dopasowanie lub potwierdź osobny zakup.")
         tx = create_transaction(db, member, tx_data, f"receipt:{receipt.id}", source="receipt", source_id=receipt.id)
+    if data.acknowledge_bank_separate and not data.target_transaction_id:
+        tx.bank_match_excluded = True
     receipt.transaction_id, receipt.status, receipt.error = tx.id, "confirmed", None
     for task in db.scalars(select(ReviewTask).where(ReviewTask.household_id == household_id, ReviewTask.receipt_id == receipt.id)):
         task.resolved = True
         task.updated_by = member.user_id
+    db.flush()
+    from .refunds import refund_allocations
+    from .bank_matching import maybe_reconcile
+
+    refund_allocations(db, tx, member.user_id)
+    maybe_reconcile(db, member)
     audit(db, member, "receipt.confirmed", receipt.id)
     db.commit()
     return transaction_data(db, tx)
@@ -1188,8 +1292,12 @@ def analytics(household_id: str, month: str, member: Membership, db: Db):
             )
         )
     )
-    variable = max(0, budget["expenses"] - recurring_actual)
-    forecast = (variable * end.day // elapsed + recurring_actual + outstanding + budget["pocket"] + budget["savings"]) if elapsed else None
+    variable = max(0, budget["expenses"] + budget["refunds"] - recurring_actual)
+    forecast = (
+        (variable * end.day // elapsed + recurring_actual + outstanding + budget["pocket"] + budget["savings"] - budget["refunds"])
+        if elapsed
+        else None
+    )
     trend = []
     index = start.year * 12 + start.month - 1
     for delta in range(5, -1, -1):
@@ -1223,6 +1331,7 @@ def analytics(household_id: str, month: str, member: Membership, db: Db):
 @app.get("/households/{household_id}/export")
 def export(household_id: str, member: Membership, db: Db):
     models = [
+        AccountAdjustment,
         Meter,
         MeterPhoto,
         MeterReading,
@@ -1302,6 +1411,7 @@ def household_delete(household_id: str, data: HouseholdInput, member: Membership
     paths += [storage_path(r.path) for r in records(db, MeterPhoto, household_id)]
     # Delete in dependency order to preserve FK integrity.
     for model in [
+        AccountAdjustment,
         BankDelivery,
         BankSubscription,
         BankEntry,

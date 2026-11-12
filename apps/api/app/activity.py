@@ -64,7 +64,7 @@ def activity(
         select(User.id, User.name, Transaction.kind, func.count(Transaction.id), func.sum(Transaction.amount))
         .select_from(Transaction)
         .outerjoin(User, User.id == Transaction.created_by)
-        .where(Transaction.kind.in_(["expense", "income"]))
+        .where(Transaction.kind.in_(["expense", "income"]), Transaction.refund_of_id.is_(None))
         .group_by(User.id, User.name, Transaction.kind)
     )
     for identifier, name, kind, count, amount in db.execute(bounded(transaction_query, Transaction)):
